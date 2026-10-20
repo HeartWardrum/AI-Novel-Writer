@@ -32,14 +32,19 @@ vi.mock('electron', () => ({
 
 vi.mock('../../utils/config-utils', () => ({
   MODELS_CONFIG_PATH: 'models.json',
+  CREDENTIALS_CONFIG_PATH: 'credentials.json',
   GLOBAL_CONFIG_PATH: 'config.json',
   DEFAULT_GLOBAL_CONFIG: mocks.config,
   readJsonFile: vi.fn((filePath: string, fallback: unknown) => (
-    filePath === 'models.json' ? mocks.models : (filePath === 'config.json' ? mocks.config : fallback)
+    filePath === 'models.json' ? mocks.models
+      : filePath === 'credentials.json' ? []
+        : (filePath === 'config.json' ? mocks.config : fallback)
   )),
   tryReadJsonFile: vi.fn((filePath: string) => ({
     status: 'ok',
-    value: filePath === 'models.json' ? mocks.models : mocks.config,
+    value: filePath === 'models.json' ? mocks.models
+      : filePath === 'credentials.json' ? []
+        : mocks.config,
   })),
   writeJsonFile: mocks.writeJsonFile,
 }))

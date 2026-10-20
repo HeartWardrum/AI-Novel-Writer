@@ -28,6 +28,7 @@ const initial = {
 export let VELA_HOME = initial.canonicalTarget
 export let GLOBAL_CONFIG_PATH = path.join(VELA_HOME, 'config.json')
 export let MODELS_CONFIG_PATH = path.join(VELA_HOME, 'models.json')
+export let CREDENTIALS_CONFIG_PATH = path.join(VELA_HOME, 'credentials.json')
 export let RECENT_PROJECTS_PATH = path.join(VELA_HOME, 'recent-projects.json')
 let activeGeneration: string | null = null
 let activeLegacySource = initial.legacySource
@@ -41,6 +42,7 @@ export function installGlobalDataLocator(dataRoot: string, generation: string, l
   VELA_HOME = dataRoot
   GLOBAL_CONFIG_PATH = path.join(dataRoot, 'config.json')
   MODELS_CONFIG_PATH = path.join(dataRoot, 'models.json')
+  CREDENTIALS_CONFIG_PATH = path.join(dataRoot, 'credentials.json')
   RECENT_PROJECTS_PATH = path.join(dataRoot, 'recent-projects.json')
   activeGeneration = generation
   activeLegacySource = path.resolve(legacySource)

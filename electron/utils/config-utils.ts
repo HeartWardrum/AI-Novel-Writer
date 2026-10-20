@@ -3,7 +3,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { GlobalConfig } from '../../src/shared/ipc-channels'
 import { VELA_HOME, assertGlobalDataReady, assertGlobalPathAccess } from '../services/app-data-locator'
-export { VELA_HOME, GLOBAL_CONFIG_PATH, MODELS_CONFIG_PATH, RECENT_PROJECTS_PATH } from '../services/app-data-locator'
+export { VELA_HOME, GLOBAL_CONFIG_PATH, MODELS_CONFIG_PATH, CREDENTIALS_CONFIG_PATH, RECENT_PROJECTS_PATH } from '../services/app-data-locator'
 
 /** Compatibility function name; only the admitted canonical generation may be created. */
 

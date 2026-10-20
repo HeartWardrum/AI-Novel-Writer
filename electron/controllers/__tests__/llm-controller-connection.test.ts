@@ -25,10 +25,15 @@ vi.mock('electron', () => ({
 
 vi.mock('../../utils/config-utils', () => ({
   MODELS_CONFIG_PATH: 'models.json',
+  CREDENTIALS_CONFIG_PATH: 'credentials.json',
   GLOBAL_CONFIG_PATH: 'config.json',
   DEFAULT_GLOBAL_CONFIG: { proxy: { enabled: false } },
-  readJsonFile: vi.fn((filePath: string, fallback: unknown) => filePath === 'models.json' ? mocks.models : fallback),
-  tryReadJsonFile: vi.fn(() => ({ status: 'missing' })),
+  readJsonFile: vi.fn((filePath: string, fallback: unknown) => (
+    filePath === 'models.json' ? mocks.models : (filePath === 'credentials.json' ? [] : fallback)
+  )),
+  tryReadJsonFile: vi.fn((filePath: string) => (
+    filePath === 'credentials.json' ? { status: 'ok', value: [] } : { status: 'missing' }
+  )),
   writeJsonFile: vi.fn(),
 }))
 

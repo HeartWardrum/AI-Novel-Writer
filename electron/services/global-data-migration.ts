@@ -5,6 +5,8 @@ import { isDeepStrictEqual } from 'node:util'
 import { installGlobalDataLocator, type GlobalDataRoots } from './app-data-locator'
 
 export const GLOBAL_OBJECTS = ['config.json', 'models.json', 'recent-projects.json', 'mcp_config.json', 'prompts', 'skills', 'skins'] as const
+/** Optional peer of models.json; created on first account save, validated when present. */
+const OPTIONAL_GLOBAL_OBJECTS = ['credentials.json'] as const
 /** No verified product writer owns arbitrary contents of these shared legacy directories. */
 export const GLOBAL_PRESERVED_OBJECTS = ['logs', 'metadata', 'update'] as const
 type Ready = { state: 'ready'; globalGeneration: string; dataRoot: string; legacySourceIgnored: boolean; preservedUnknownCount: number }
@@ -74,7 +76,7 @@ function files(root: string, prefix = ''): string[] {
   return result.sort()
 }
 function selectedFiles(root: string): string[] {
-  return GLOBAL_OBJECTS.flatMap(name => {
+  return [...GLOBAL_OBJECTS, ...OPTIONAL_GLOBAL_OBJECTS].flatMap(name => {
     const location = path.join(root, name)
     let stat: fs.Stats
     try { stat = fs.lstatSync(location) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
@@ -89,14 +91,29 @@ function selectedFiles(root: string): string[] {
 function validate(root: string): void {
   const names = selectedFiles(root) // Link/type proof precedes every JSON or image read.
   const configPath = path.join(root, 'config.json'), modelsPath = path.join(root, 'models.json')
+  const credentialsPath = path.join(root, 'credentials.json')
   const config = fs.existsSync(configPath) ? parse(configPath) : {}
   const models = fs.existsSync(modelsPath) ? parse(modelsPath) : []
-  if (!record(config) || !Array.isArray(models)) fail('GLOBAL_CONFIG_SCHEMA_INVALID')
+  const credentials = fs.existsSync(credentialsPath) ? parse(credentialsPath) : []
+  if (!record(config) || !Array.isArray(models) || !Array.isArray(credentials)) fail('GLOBAL_CONFIG_SCHEMA_INVALID')
+  const credentialIds = new Set<string>()
+  for (const credential of credentials) {
+    if (!record(credential) || typeof credential.id !== 'string' || !credential.id || credentialIds.has(credential.id)) {
+      fail('GLOBAL_CREDENTIAL_ID_INVALID')
+    }
+    for (const key of ['apiKey', 'baseUrl', 'name', 'provider', 'protocol']) {
+      if (credential[key] !== undefined && typeof credential[key] !== 'string') fail('GLOBAL_CREDENTIAL_SCHEMA_INVALID')
+    }
+    credentialIds.add(credential.id)
+  }
   const ids = new Set<string>()
   for (const model of models) {
     if (!record(model) || typeof model.id !== 'string' || !model.id || ids.has(model.id)) fail('GLOBAL_MODEL_ID_INVALID')
-    for (const key of ['apiKey', 'baseUrl', 'name', 'provider', 'protocol', 'modelName']) {
+    for (const key of ['apiKey', 'baseUrl', 'name', 'provider', 'protocol', 'modelName', 'credentialId']) {
       if (model[key] !== undefined && typeof model[key] !== 'string') fail('GLOBAL_MODEL_SCHEMA_INVALID')
+    }
+    if (typeof model.credentialId === 'string' && model.credentialId && !credentialIds.has(model.credentialId)) {
+      fail('GLOBAL_MODEL_CREDENTIAL_MISSING')
     }
     ids.add(model.id)
   }
@@ -187,7 +204,7 @@ export function runGlobalDataMigration(options: GlobalMigrationOptions): GlobalM
     } else {
       // An unknown half-generation is preserved for explicit adjudication.
       if (fs.existsSync(generations) || fs.existsSync(control)) fail('GLOBAL_PARTIAL_TARGET_UNKNOWN')
-      if (fs.existsSync(target) && fs.readdirSync(target).some(name => ![...GLOBAL_OBJECTS, ...GLOBAL_PRESERVED_OBJECTS].includes(name as typeof GLOBAL_OBJECTS[number]))) fail('GLOBAL_TARGET_UNKNOWN')
+      if (fs.existsSync(target) && fs.readdirSync(target).some(name => ![...GLOBAL_OBJECTS, ...OPTIONAL_GLOBAL_OBJECTS, ...GLOBAL_PRESERVED_OBJECTS].includes(name as typeof GLOBAL_OBJECTS[number]))) fail('GLOBAL_TARGET_UNKNOWN')
       journal = { version: 1, generation: randomUUID(), phase: 'prepared', source: legacyFiles.length ? 'legacy' : targetFiles.length ? 'canonical' : 'empty' }
       fs.mkdirSync(control, { recursive: true }); fs.mkdirSync(generations)
       durable(journalPath, journal); checkpoint('prepared')
@@ -211,7 +228,7 @@ export function runGlobalDataMigration(options: GlobalMigrationOptions): GlobalM
         if (!fs.readFileSync(temporary).equals(fs.readFileSync(path.join(source, destination)))) fail('GLOBAL_STAGING_MISMATCH')
         fs.renameSync(temporary, path.join(staging, destination)); syncDirectory(path.dirname(temporary))
       }
-      if (fs.readdirSync(staging).some(name => !GLOBAL_OBJECTS.includes(name as typeof GLOBAL_OBJECTS[number]))) fail('GLOBAL_STAGING_UNKNOWN_OBJECT')
+      if (fs.readdirSync(staging).some(name => ![...GLOBAL_OBJECTS, ...OPTIONAL_GLOBAL_OBJECTS].includes(name as typeof GLOBAL_OBJECTS[number]))) fail('GLOBAL_STAGING_UNKNOWN_OBJECT')
       if (journal.phase === 'verified' && !equalSelected(source, staging)) fail('GLOBAL_VERIFIED_SOURCE_CHANGED')
       // An interrupted write is retried only for this journal-owned staging.
       for (const name of journal.phase === 'prepared' ? names : []) {
@@ -232,7 +249,7 @@ export function runGlobalDataMigration(options: GlobalMigrationOptions): GlobalM
       journal.phase = 'verified'; durable(journalPath, journal); checkpoint('verified')
       fs.renameSync(staging, installed); syncDirectory(generations); checkpoint('installed')
     } else if (journal.phase !== 'verified' || !equalSelected(source, installed)) fail('GLOBAL_INSTALLED_UNVERIFIED')
-    const retainedCount = (root: string) => fs.existsSync(root) ? fs.readdirSync(root).filter(name => !GLOBAL_OBJECTS.includes(name as typeof GLOBAL_OBJECTS[number]) && !['.migration', 'generations'].includes(name)).length : 0
+    const retainedCount = (root: string) => fs.existsSync(root) ? fs.readdirSync(root).filter(name => ![...GLOBAL_OBJECTS, ...OPTIONAL_GLOBAL_OBJECTS].includes(name as typeof GLOBAL_OBJECTS[number]) && !['.migration', 'generations'].includes(name)).length : 0
     const unknown = retainedCount(legacy) + retainedCount(target)
     const receipt: Receipt = { version: 1, generation: journal.generation, completed: true, preservedUnknownCount: unknown,
       requiredObjects: GLOBAL_OBJECTS.filter(name => fs.existsSync(path.join(installed, name))) }

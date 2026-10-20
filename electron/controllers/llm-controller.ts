@@ -4,11 +4,26 @@ import {
   tryReadJsonFile,
   writeJsonFile,
   MODELS_CONFIG_PATH,
+  CREDENTIALS_CONFIG_PATH,
   GLOBAL_CONFIG_PATH,
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
-import type { GlobalConfig, LLMFinishReason, LLMRequest, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
+import type {
+  GlobalConfig,
+  LLMFinishReason,
+  LLMRequest,
+  ModelDiscoveryRequest,
+  ModelProfile,
+  ProviderCredential,
+  TokenUsage,
+} from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
+import {
+  assertCredentialNotReferenced,
+  normalizeModelProfileForSave,
+  ProviderCredentialError,
+  resolveModelProfile,
+} from '../../src/shared/provider-credential'
 import { isReasoningMapping } from '../../src/shared/reasoning-types'
 import { LLMFactory } from '../llm/llm-factory'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
@@ -42,6 +57,22 @@ function loadModelConfigsForUpdate(): ModelProfile[] {
   return result.status === 'ok' ? result.value : []
 }
 
+function loadCredentialConfigs(): ProviderCredential[] {
+  return readJsonFile<ProviderCredential[]>(CREDENTIALS_CONFIG_PATH, [])
+}
+
+function loadCredentialConfigsForUpdate(): ProviderCredential[] {
+  const result = tryReadJsonFile<ProviderCredential[]>(CREDENTIALS_CONFIG_PATH)
+  if (result.status === 'error') {
+    throw new Error('厂商账号配置损坏，已拒绝覆盖', { cause: result.error })
+  }
+  return result.status === 'ok' ? result.value : []
+}
+
+function saveCredentialConfigs(credentials: ProviderCredential[]) {
+  writeJsonFile(CREDENTIALS_CONFIG_PATH, credentials)
+}
+
 function loadGlobalConfigForUpdate(): GlobalConfig {
   const result = tryReadJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH)
   if (result.status === 'error') {
@@ -54,9 +85,23 @@ function saveModelConfigs(models: ModelProfile[]) {
   writeJsonFile(MODELS_CONFIG_PATH, models)
 }
 
+/** 按 id 取型号并合并厂商账号凭据；供生成、lease、embedding 共用。 */
 function getModelConfig(modelId: string): ModelProfile | null {
   const models = loadModelConfigs()
-  return models.find((m) => m.id === modelId) ?? null
+  const profile = models.find((m) => m.id === modelId) ?? null
+  if (!profile) return null
+  return resolveModelProfile(profile, loadCredentialConfigs())
+}
+
+function listResolvedModels(): ModelProfile[] {
+  const credentials = loadCredentialConfigs()
+  return loadModelConfigs().map(profile => {
+    try {
+      return resolveModelProfile(profile, credentials)
+    } catch {
+      return profile
+    }
+  })
 }
 
 function applyProxyConfig() {
@@ -266,7 +311,47 @@ export function registerLLMController() {
     return { success: false }
   })
 
-  ipcMain.handle('llm:list-models', async () => loadModelConfigs())
+  ipcMain.handle('llm:list-models', async () => listResolvedModels())
+
+  ipcMain.handle('llm:list-credentials', async () => loadCredentialConfigs())
+
+  ipcMain.handle('llm:save-credential', async (_event, credential: ProviderCredential) => {
+    try {
+      if (!credential.id?.trim() || !credential.baseUrl?.trim()) {
+        throw new Error('INVALID_CREDENTIAL')
+      }
+      const credentials = loadCredentialConfigsForUpdate()
+      const next: ProviderCredential = {
+        id: credential.id.trim(),
+        name: credential.name?.trim() || credential.provider,
+        provider: credential.provider,
+        protocol: credential.protocol,
+        baseUrl: credential.baseUrl.trim(),
+        apiKey: credential.apiKey ?? '',
+      }
+      const idx = credentials.findIndex(item => item.id === next.id)
+      if (idx >= 0) credentials[idx] = next
+      else credentials.push(next)
+      saveCredentialConfigs(credentials)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('llm:delete-credential', async (_event, credentialId: string) => {
+    try {
+      assertCredentialNotReferenced(credentialId, loadModelConfigs())
+      const credentials = loadCredentialConfigsForUpdate()
+      saveCredentialConfigs(credentials.filter(item => item.id !== credentialId))
+      return { success: true }
+    } catch (error) {
+      const message = error instanceof ProviderCredentialError
+        ? error.message
+        : String(error)
+      return { success: false, error: message }
+    }
+  })
 
   ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     try {
@@ -283,10 +368,12 @@ export function registerLLMController() {
         || (model.protocol === 'gemini') !== (model.reasoningMapping.adapter === 'gemini-thinking-budget'))) {
         throw new Error('INVALID_REASONING_MAPPING')
       }
+      const credentials = loadCredentialConfigs()
+      const normalized = normalizeModelProfileForSave(model, credentials)
       const models = loadModelConfigsForUpdate()
-      const idx = models.findIndex((m) => m.id === model.id)
-      if (idx >= 0) models[idx] = model
-      else models.push(model)
+      const idx = models.findIndex((m) => m.id === normalized.id)
+      if (idx >= 0) models[idx] = normalized
+      else models.push(normalized)
       saveModelConfigs(models)
       return { success: true }
     } catch (error) {
@@ -381,19 +468,19 @@ export function registerLLMController() {
   ) => {
     try {
       applyProxyConfig()
-      
+      const resolved = resolveModelProfile(model, loadCredentialConfigs())
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
-      const provider = LLMFactory.getProvider(model)
-      
+      const provider = LLMFactory.getProvider(resolved)
+
       let result = { success: true, error: undefined as undefined | string }
-      if (model.purposes?.includes('embedding')) {
+      if (resolved.purposes?.includes('embedding')) {
         const { generateEmbeddings } = await import('../embedding')
-        await generateEmbeddings(['hello'], model.protocol, model)
+        await generateEmbeddings(['hello'], resolved.protocol, resolved)
       } else {
         const res = await provider.generate(
-          model,
+          resolved,
           messages,
-          resolveGenerationParameters(model, {
+          resolveGenerationParameters(resolved, {
             // 推理模型可能先消耗 reasoning tokens；预算过小会把可用连接误判为截断失败。
             maxTokens: CONNECTION_TEST_MAX_TOKENS,
             reasoningStage: 'general',
@@ -402,7 +489,7 @@ export function registerLLMController() {
         )
         result = { success: res.success, error: res.error }
       }
-      
+
       return { success: result.success, error: result.error }
     } catch (error) {
       return { success: false, error: String(error) }

@@ -547,6 +547,18 @@ export interface LLMChannels {
     args: []
     return: ModelProfile[]
   }
+  'llm:list-credentials': {
+    args: []
+    return: ProviderCredential[]
+  }
+  'llm:save-credential': {
+    args: [credential: ProviderCredential]
+    return: { success: boolean; error?: string }
+  }
+  'llm:delete-credential': {
+    args: [credentialId: string]
+    return: { success: boolean; error?: string }
+  }
   'llm:discover-models': {
     /** Discovery uses the current settings form without persisting it first. */
     args: [request: ModelDiscoveryRequest]
@@ -554,7 +566,7 @@ export interface LLMChannels {
   }
   'llm:save-model': {
     args: [model: ModelProfile]
-    return: { success: boolean }
+    return: { success: boolean; error?: string }
   }
   'llm:delete-model': {
     args: [modelId: string]
@@ -780,11 +792,24 @@ export interface TokenUsage {
   totalTokens: number | null
 }
 
+export type ModelProviderId = 'openai' | 'gemini' | 'deepseek' | 'ollama' | 'bigmodel' | 'novelai' | 'xai' | 'siliconflow' | 'aion' | 'custom'
+export type ModelProtocolId = 'openai' | 'gemini'
+
+/** 厂商账号：一把 Key / 端点可挂多个型号档案。 */
+export interface ProviderCredential {
+  id: string
+  name: string
+  provider: ModelProviderId
+  protocol: ModelProtocolId
+  baseUrl: string
+  apiKey: string
+}
+
 export interface ModelProfile {
   id: string
   name: string
-  provider: 'openai' | 'gemini' | 'deepseek' | 'ollama' | 'bigmodel' | 'novelai' | 'xai' | 'siliconflow' | 'custom'
-  protocol: 'openai' | 'gemini'
+  provider: ModelProviderId
+  protocol: ModelProtocolId
   modelName: string
   apiKey: string
   baseUrl: string
@@ -802,6 +827,8 @@ export interface ModelProfile {
   reasoningMapping?: VerifiedReasoningMapping
   /** 仅用于 Embedding 模型；旧配置省略时沿用原有默认行为。 */
   embeddingOptions?: EmbeddingOptions
+  /** 挂到厂商账号后，调用时用账号的 Key / 端点覆盖本档案对应字段。 */
+  credentialId?: string
 }
 
 export interface ProjectClearOptions {

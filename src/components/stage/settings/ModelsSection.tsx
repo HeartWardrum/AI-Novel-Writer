@@ -2,8 +2,10 @@ import { useState, type ReactNode } from 'react'
 import { Cpu, MoreHorizontal, Plus } from 'lucide-react'
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import { BUILTIN_PRESETS } from '../../../shared/provider-presets'
+import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { openModelProviderResource } from '../../settings/model-provider-resource'
+import { ProviderAccountsPanel } from '../../settings/ProviderAccountsPanel'
 import { useUnsavedSettings } from '../../settings/unsaved-settings'
 import { ModelForm } from '../../settings/ModelForm'
 import { useModelSection } from '../../settings/use-model-section'
@@ -22,6 +24,7 @@ function providerName(model: ModelProfile): string {
 export default function ModelsSection({ purposes, header }: { purposes: ModelProfile['purposes']; header: (action: ReactNode) => ReactNode }) {
   const text = useLocaleStore(s => s.text)
   const section = useModelSection(purposes)
+  const credentials = useLLMStore(s => s.credentials)
   useUnsavedSettings(section.editingDirty)
   const [deleting, setDeleting] = useState<ModelProfile | null>(null)
   const retrieval = section.isEmbeddingSection
@@ -42,6 +45,7 @@ export default function ModelsSection({ purposes, header }: { purposes: ModelPro
             saving={section.saving}
             purposeOptions={purposes}
             presets={BUILTIN_PRESETS}
+            credentials={credentials}
           />
         </div>
       </>
@@ -52,6 +56,7 @@ export default function ModelsSection({ purposes, header }: { purposes: ModelPro
   return (
     <>
       {header(section.models.length > 0 ? add : null)}
+      {!retrieval && <ProviderAccountsPanel purposes={purposes} models={section.models} />}
       {retrieval && (
         <Notice
           tone="info"
@@ -86,7 +91,10 @@ export default function ModelsSection({ purposes, header }: { purposes: ModelPro
                       <span>{name}</span>
                       {isDefault && <span className="stage-badge">{text('默认', 'Default')}</span>}
                     </div>
-                    <p className="stage-set-model-meta">{providerName(model)} · {model.modelName}</p>
+                    <p className="stage-set-model-meta">
+                      {providerName(model)} · {model.modelName}
+                      {model.credentialId ? ` · ${text('账号', 'account')} ${credentials.find(item => item.id === model.credentialId)?.name || model.credentialId}` : ''}
+                    </p>
                   </div>
                   <Button variant="text" size="sm" onClick={() => section.edit(model)} aria-label={text(`编辑「${name}」`, `Edit “${name}”`)}>{text('编辑', 'Edit')}</Button>
                   <Menu

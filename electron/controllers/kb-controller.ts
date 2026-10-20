@@ -1,8 +1,9 @@
 import { app, ipcMain, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import path from 'node:path'
-import { readJsonFile, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG, MODELS_CONFIG_PATH } from '../utils/config-utils'
-import { GlobalConfig, ModelProfile } from '../../src/shared/ipc-channels'
+import { readJsonFile, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG, MODELS_CONFIG_PATH, CREDENTIALS_CONFIG_PATH } from '../utils/config-utils'
+import { GlobalConfig, ModelProfile, type ProviderCredential } from '../../src/shared/ipc-channels'
+import { resolveModelProfile } from '../../src/shared/provider-credential'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import type { EmbeddingOptions } from '../../src/shared/embedding-options'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
@@ -127,8 +128,10 @@ export function getEmbeddingConfig(): { protocol: 'openai' | 'gemini'; model: { 
   if (!targetModelId) return null
 
   const models = readJsonFile<ModelProfile[]>(MODELS_CONFIG_PATH, [])
-  const model = models.find((m) => m.id === targetModelId)
-  if (!model) return null
+  const profile = models.find((m) => m.id === targetModelId)
+  if (!profile) return null
+  const credentials = readJsonFile<ProviderCredential[]>(CREDENTIALS_CONFIG_PATH, [])
+  const model = resolveModelProfile(profile, credentials)
   return {
     protocol: model.protocol as 'openai' | 'gemini',
     model: { baseUrl: model.baseUrl, apiKey: model.apiKey, modelName: model.modelName, embeddingOptions: model.embeddingOptions },

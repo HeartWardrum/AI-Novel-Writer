@@ -7,6 +7,7 @@ import type {
   ModelDiscoveryResult,
   ModelDiscoveryRequest,
   ModelProfile,
+  ProviderCredential,
   LLMResponse,
   TokenUsage,
 } from '../shared/ipc-channels'
@@ -24,6 +25,8 @@ interface StreamCallbacks {
 interface LLMState {
   /** 已配置的模型列表 */
   models: ModelProfile[]
+  /** 厂商账号（一把 Key 可挂多个型号） */
+  credentials: ProviderCredential[]
   /** 当前默认生成模型 ID */
   defaultModelId: string | null
   /** 当前默认向量模型 ID */
@@ -38,6 +41,12 @@ interface LLMState {
   init: () => Promise<void>
   /** 加载模型列表 */
   loadModels: () => Promise<void>
+  /** 加载厂商账号 */
+  loadCredentials: () => Promise<void>
+  /** 保存厂商账号 */
+  saveCredential: (credential: ProviderCredential) => Promise<boolean>
+  /** 删除厂商账号（仍被型号引用时失败） */
+  deleteCredential: (credentialId: string) => Promise<boolean>
   /** 保存模型 */
   saveModel: (model: ModelProfile) => Promise<boolean>
   /** 删除模型 */
@@ -71,6 +80,7 @@ let initializationFlight: Promise<void> | null = null
 
 export const useLLMStore = create<LLMState>()((set, get) => ({
   models: [],
+  credentials: [],
   defaultModelId: null,
   defaultEmbeddingModelId: null,
   activeRequests: new Map(),
@@ -85,13 +95,15 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
         set({ loaded: true })
         return
       }
-      const [models, defaultModelId, defaultEmbeddingModelId] = await Promise.all([
+      const [models, credentials, defaultModelId, defaultEmbeddingModelId] = await Promise.all([
         ipc.invoke('llm:list-models'),
+        ipc.invoke('llm:list-credentials'),
         ipc.invoke('llm:get-default-model'),
         ipc.invoke('llm:get-default-embedding-model'),
       ])
       set({
         models,
+        credentials,
         defaultModelId,
         defaultEmbeddingModelId,
         loaded: true,
@@ -109,12 +121,38 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
     set({ models })
   },
 
+  loadCredentials: async () => {
+    if (!ipc.isElectron) return
+    const credentials = await ipc.invoke('llm:list-credentials')
+    set({ credentials })
+  },
+
+  saveCredential: async (credential) => {
+    const result = await ipc.invoke('llm:save-credential', credential)
+    if (result.success) {
+      await Promise.all([get().loadCredentials(), get().loadModels()])
+    } else {
+      alertError(result.error || '保存厂商账号失败', { title: '厂商账号保存失败' })
+    }
+    return result.success
+  },
+
+  deleteCredential: async (credentialId) => {
+    const result = await ipc.invoke('llm:delete-credential', credentialId)
+    if (!result.success) {
+      alertError(result.error || '删除厂商账号失败', { title: '厂商账号删除失败' })
+      return false
+    }
+    await Promise.all([get().loadCredentials(), get().loadModels()])
+    return true
+  },
+
   saveModel: async (model) => {
     const result = await ipc.invoke('llm:save-model', model)
     if (result.success) {
       await get().loadModels()
     } else {
-      alertError('保存模型失败', { title: '模型设置保存失败' })
+      alertError(result.error || '保存模型失败', { title: '模型设置保存失败' })
     }
     return result.success
   },

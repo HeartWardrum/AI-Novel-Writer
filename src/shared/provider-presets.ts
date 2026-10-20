@@ -430,6 +430,114 @@ export function createProviderCatalog(): ProviderPreset[] {
     embeddingModels: ['nomic-embed-text', 'mxbai-embed-large', 'bge-m3'],
   },
   {
+    /** Aion Labs — OpenAI 兼容，叙事/角色扮演向模型 */
+    provider: 'aion',
+    displayName: 'Aion Labs',
+    baseUrl: 'https://api.aionlabs.ai/v1',
+    protocol: 'openai',
+    models: [
+      {
+        name: 'aion-labs/aion-2.0',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 131_072,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+        // https://api.aionlabs.ai/docs/api-reference/
+        reasoningMapping: {
+          adapter: 'openai-reasoning-effort',
+          supportedEfforts: ['low', 'high', 'max'],
+          providerValues: { low: 'low', high: 'high', max: 'max' },
+        },
+      },
+      {
+        name: 'aion-labs/aion-3.0',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 131_072,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+        reasoningMapping: {
+          adapter: 'openai-reasoning-effort',
+          supportedEfforts: ['low', 'high', 'max'],
+          providerValues: { low: 'low', high: 'high', max: 'max' },
+        },
+      },
+      {
+        name: 'aion-labs/aion-3.0-mini',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 131_072,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+        reasoningMapping: {
+          adapter: 'openai-reasoning-effort',
+          supportedEfforts: ['low', 'high', 'max'],
+          providerValues: { low: 'low', high: 'high', max: 'max' },
+        },
+      },
+      {
+        name: 'aion-labs/aion-3.5',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 262_144,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+        reasoningMapping: {
+          adapter: 'openai-reasoning-effort',
+          supportedEfforts: ['low', 'high', 'max'],
+          providerValues: { low: 'low', high: 'high', max: 'max' },
+        },
+      },
+      {
+        name: 'aion-labs/aion-3.5-mini',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 262_144,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+        reasoningMapping: {
+          adapter: 'openai-reasoning-effort',
+          supportedEfforts: ['low', 'high', 'max'],
+          providerValues: { low: 'low', high: 'high', max: 'max' },
+        },
+      },
+      {
+        name: 'aion-labs/aion-rp-llama-3.1-8b',
+        maxTokens: 32_768,
+        budgetCapabilities: {
+          contextWindowTokens: 32_768,
+          maxOutputTokens: 32_768,
+          evidence: {
+            sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+            calibration: 'conservative-provider-documentation',
+          },
+        },
+      },
+    ],
+    embeddingModels: [],
+  },
+  {
     provider: 'custom',
     displayName: '自定义',
     baseUrl: '',

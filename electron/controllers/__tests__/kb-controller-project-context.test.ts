@@ -45,6 +45,7 @@ vi.mock('../../utils/config-utils', () => ({
   GLOBAL_CONFIG_PATH: 'global.json',
   DEFAULT_GLOBAL_CONFIG: {},
   MODELS_CONFIG_PATH: 'models.json',
+  CREDENTIALS_CONFIG_PATH: 'credentials.json',
 }))
 
 vi.mock('../../services/knowledge-base-loader', () => ({

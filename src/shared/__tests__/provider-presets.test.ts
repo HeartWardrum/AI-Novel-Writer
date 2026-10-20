@@ -67,6 +67,59 @@ describe('provider catalog', () => {
     }))
   })
 
+  it('exposes Aion Labs through its documented OpenAI-compatible preset', () => {
+    const aion = createProviderCatalog().find((preset) => preset.provider === 'aion')
+
+    expect(aion).toMatchObject({
+      provider: 'aion',
+      displayName: 'Aion Labs',
+      baseUrl: 'https://api.aionlabs.ai/v1',
+      protocol: 'openai',
+    })
+    expect(aion?.models.map((model) => model.name)).toEqual([
+      'aion-labs/aion-2.0',
+      'aion-labs/aion-3.0',
+      'aion-labs/aion-3.0-mini',
+      'aion-labs/aion-3.5',
+      'aion-labs/aion-3.5-mini',
+      'aion-labs/aion-rp-llama-3.1-8b',
+    ])
+
+    const profile = {
+      provider: 'aion',
+      protocol: 'openai',
+      baseUrl: 'https://api.aionlabs.ai/v1',
+      modelName: 'aion-labs/aion-3.5',
+    }
+    expect(resolveModelProfileBudgetCapabilities(profile)).toEqual({
+      contextWindowTokens: 262_144,
+      maxOutputTokens: 32_768,
+      evidence: {
+        sourceUrl: 'https://api.aionlabs.ai/docs/models/',
+        calibration: 'conservative-provider-documentation',
+      },
+    })
+    expect(resolveModelProfileReasoningMapping(profile)).toEqual({
+      adapter: 'openai-reasoning-effort',
+      supportedEfforts: ['low', 'high', 'max'],
+      providerValues: { low: 'low', high: 'high', max: 'max' },
+    })
+    expect(resolveModelProfileReasoningMapping({
+      ...profile,
+      modelName: 'aion-labs/aion-rp-llama-3.1-8b',
+    })).toBeUndefined()
+
+    for (const overrides of [
+      { baseUrl: 'https://proxy.example/v1' },
+      { baseUrl: 'https://api.aionlabs.ai/v1?proxy=1' },
+      { modelName: 'aion-labs/aion-3.5-other' },
+      { protocol: 'gemini' },
+    ]) {
+      expect(resolveModelProfileBudgetCapabilities({ ...profile, ...overrides })).toBeUndefined()
+      expect(resolveModelProfileReasoningMapping({ ...profile, ...overrides })).toBeUndefined()
+    }
+  })
+
   it.each(['https://api.deepseek.com', 'https://api.deepseek.com/', 'https://api.deepseek.com/v1', 'https://api.deepseek.com/v1/'])(
     'resolves official DeepSeek facts for %s', (baseUrl) => {
     const legacy = {

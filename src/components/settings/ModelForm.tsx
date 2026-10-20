@@ -1,11 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { Save, Settings2, Zap, Eye, EyeOff, ChevronDown, RefreshCw, RotateCcw } from 'lucide-react'
 import { useLLMStore } from '../../stores/llm-store'
-import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile } from '../../shared/ipc-channels'
+import type { DiscoveredModel, ModelDiscoveryErrorCode, ModelProfile, ProviderCredential } from '../../shared/ipc-channels'
 import { LOW_VRAM_EMBEDDING_OPTIONS, normalizeEmbeddingOptions } from '../../shared/embedding-options'
 import type { ModelCapabilities, ProviderPreset } from '../../shared/provider-presets'
 import { resolveModelProfileBudgetCapabilities } from '../../shared/provider-presets'
 import { applyModelProfileSelection, DEFAULT_GENERATION_OUTPUT_TOKENS, modelCapabilitySource } from '../../shared/model-profile-draft'
+import { resolveModelProfile } from '../../shared/provider-credential'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
@@ -17,7 +18,7 @@ import { openModelProviderResource } from './model-provider-resource'
 
 /** 模型编辑表单 */
 export function ModelForm({
-  model, onChange, onSave, onCancel, saving, presets,
+  model, onChange, onSave, onCancel, saving, presets, credentials = [],
 }: {
   model: ModelProfile
   onChange: (m: ModelProfile) => void
@@ -27,6 +28,8 @@ export function ModelForm({
   purposeOptions: ModelProfile['purposes']
   /** 服务商预设（来自 BUILTIN_PRESETS 常量） */
   presets: ProviderPreset[]
+  /** 可选厂商账号；选中后 Key / 端点来自账号。 */
+  credentials?: ProviderCredential[]
 }) {
   const text = useLocaleStore(s => s.text)
   const [showKey, setShowKey] = useState(false)
@@ -42,23 +45,31 @@ export function ModelForm({
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([])
   const [discoveryNotice, setDiscoveryNotice] = useState<ModelDiscoveryErrorCode | null>(null)
   const discoveryRevision = useRef(0)
+  const resolvedForWire = (() => {
+    try {
+      return resolveModelProfile(model, credentials)
+    } catch {
+      return model
+    }
+  })()
+  const wireHasKey = Boolean(resolvedForWire.apiKey.trim()) || resolvedForWire.provider === 'ollama'
   const currentDiscoveryConfig = useRef({
-    id: model.id,
-    provider: model.provider,
-    protocol: model.protocol,
-    baseUrl: model.baseUrl,
-    apiKey: model.apiKey,
+    id: resolvedForWire.id,
+    provider: resolvedForWire.provider,
+    protocol: resolvedForWire.protocol,
+    baseUrl: resolvedForWire.baseUrl,
+    apiKey: resolvedForWire.apiKey,
   })
 
   useLayoutEffect(() => {
     currentDiscoveryConfig.current = {
-      id: model.id,
-      provider: model.provider,
-      protocol: model.protocol,
-      baseUrl: model.baseUrl,
-      apiKey: model.apiKey,
+      id: resolvedForWire.id,
+      provider: resolvedForWire.provider,
+      protocol: resolvedForWire.protocol,
+      baseUrl: resolvedForWire.baseUrl,
+      apiKey: resolvedForWire.apiKey,
     }
-  }, [model.apiKey, model.baseUrl, model.id, model.protocol, model.provider])
+  }, [resolvedForWire.apiKey, resolvedForWire.baseUrl, resolvedForWire.id, resolvedForWire.protocol, resolvedForWire.provider])
 
   useEffect(() => () => {
     discoveryRevision.current += 1
@@ -197,7 +208,7 @@ export function ModelForm({
   const handleTest = async () => {
     setTesting(true)
     setTestResult(null)
-    const result = await testConnection(model)
+    const result = await testConnection(resolvedForWire)
     setTestResult(result)
     setTesting(false)
     setTimeout(() => setTestResult(null), 3000)
@@ -221,10 +232,10 @@ export function ModelForm({
     setDiscoveryNotice(null)
     try {
       const result = await discoverModels({
-        provider: model.provider,
-        protocol: model.protocol,
-        baseUrl: model.baseUrl,
-        apiKey: model.apiKey,
+        provider: resolvedForWire.provider,
+        protocol: resolvedForWire.protocol,
+        baseUrl: resolvedForWire.baseUrl,
+        apiKey: resolvedForWire.apiKey,
       })
       if (!isCurrentRequest()) return
       if (result.success) {
@@ -270,12 +281,52 @@ export function ModelForm({
         />
       </div>
 
+      {credentials.length > 0 && (
+        <div>
+          <Label>{text('使用厂商账号', 'Provider account')}</Label>
+          <NativeSelect
+            value={model.credentialId ?? ''}
+            onChange={(event) => {
+              const credentialId = event.target.value || undefined
+              if (!credentialId) {
+                onChange({ ...model, credentialId: undefined })
+                return
+              }
+              const credential = credentials.find(item => item.id === credentialId)
+              if (!credential) return
+              onChange({
+                ...model,
+                credentialId,
+                provider: credential.provider,
+                protocol: credential.protocol,
+                baseUrl: credential.baseUrl,
+                apiKey: '',
+              })
+            }}
+            aria-label={text('使用厂商账号', 'Provider account')}
+          >
+            <option value="">{text('不使用（本型号自带 Key）', 'None (key on this model)')}</option>
+            {credentials.map(credential => (
+              <option key={credential.id} value={credential.id}>
+                {credential.name || credential.provider}
+              </option>
+            ))}
+          </NativeSelect>
+          {model.credentialId && (
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              {text('端点与 API Key 来自所选账号；下面只改型号与温度等参数。', 'Endpoint and API key come from the account; edit only the model id and parameters below.')}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* 服务商 + 协议 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>{text('服务商', 'Provider')}</Label>
           <NativeSelect
             value={model.provider}
+            disabled={Boolean(model.credentialId)}
             onChange={(e) => handleProviderChange(e.target.value as ModelProfile['provider'])}
           >
             <option value="openai">OpenAI</option>
@@ -284,6 +335,7 @@ export function ModelForm({
             <option value="gemini">Google Gemini</option>
             <option value="xai">xAI(Grok)</option>
             <option value="siliconflow">SiliconFlow</option>
+            <option value="aion">Aion Labs</option>
             <option value="ollama">{text('Ollama（本地）', 'Ollama (local)')}</option>
             <option value="bigmodel">{text('BigModel（智谱）', 'BigModel (Zhipu)')}</option>
             <option value="custom">{text('自定义', 'Custom')}</option>
@@ -293,6 +345,7 @@ export function ModelForm({
           <Label>{text('调用协议', 'Protocol')}</Label>
           <NativeSelect
             value={model.protocol}
+            disabled={Boolean(model.credentialId)}
             onChange={(e) => up('protocol', e.target.value as 'openai' | 'gemini')}
           >
             <option value="openai">OpenAI</option>
@@ -355,10 +408,15 @@ export function ModelForm({
         <Label>{text('base_url', 'base_url')}</Label>
         <Input
           value={model.baseUrl}
+          disabled={Boolean(model.credentialId)}
           onChange={(e) => up('baseUrl', e.target.value)}
           placeholder="https://api.openai.com"
         />
-        {model.provider !== 'custom' && (
+        {model.credentialId ? (
+          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+            {text('由厂商账号提供', 'Provided by the provider account')}
+          </p>
+        ) : model.provider !== 'custom' && (
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
             {text(`已自动填入 ${model.provider} 官方地址，如使用中转地址可手动修改`, `The official ${model.provider} URL was filled automatically. Edit it when using a gateway.`)}
           </p>
@@ -368,22 +426,31 @@ export function ModelForm({
       {/* API Key */}
       <div>
         <Label>{text('API Key', 'API Key')}</Label>
-        <div className="relative">
-          <Input
-            type={showKey ? 'text' : 'password'}
-            value={model.apiKey}
-            onChange={(e) => up('apiKey', e.target.value)}
-            placeholder={model.provider === 'ollama' ? text('本地部署可留空', 'Optional for local deployment') : 'sk-...'}
-            className="pr-9"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-          >
-            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        </div>
+        {model.credentialId ? (
+          <p className="text-xs rounded-md px-3 py-2" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text-muted)' }}>
+            {text(
+              `使用账号「${credentials.find(item => item.id === model.credentialId)?.name || model.credentialId}」的密钥`,
+              `Using the key from account “${credentials.find(item => item.id === model.credentialId)?.name || model.credentialId}”`,
+            )}
+          </p>
+        ) : (
+          <div className="relative">
+            <Input
+              type={showKey ? 'text' : 'password'}
+              value={model.apiKey}
+              onChange={(e) => up('apiKey', e.target.value)}
+              placeholder={model.provider === 'ollama' ? text('本地部署可留空', 'Optional for local deployment') : 'sk-...'}
+              className="pr-9"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+            >
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2 rounded-lg p-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-hover)' }}>
@@ -596,7 +663,7 @@ export function ModelForm({
         <Button
           variant="outline"
           onClick={handleTest}
-          disabled={testing || !model.baseUrl || (!model.apiKey && model.provider !== 'ollama')}
+          disabled={testing || !resolvedForWire.baseUrl || !wireHasKey}
         >
           <Zap size={13} />
           {testing ? text('测试中...', 'Testing...') : text('测试连接', 'Test connection')}
@@ -604,7 +671,7 @@ export function ModelForm({
         <Button
           className="flex-1"
           onClick={onSave}
-          disabled={saving || !model.baseUrl.trim() || !model.modelName.trim() || (!model.apiKey.trim() && model.provider !== 'ollama')}
+          disabled={saving || !resolvedForWire.baseUrl.trim() || !model.modelName.trim() || !wireHasKey}
         >
           <Save size={13} />
           {saving ? text('保存中...', 'Saving...') : text('保存配置', 'Save configuration')}
