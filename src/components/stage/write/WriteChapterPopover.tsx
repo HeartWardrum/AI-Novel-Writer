@@ -10,6 +10,7 @@ import {
   launchChapterWrite,
   preferredGenerationModelId,
 } from '../../../services/workflows/chapter-write-launch'
+import { loadTaskGenerationModelId } from '../../../services/workflows/task-generation-model-prefs'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { ChapterWritePrefill } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -70,12 +71,15 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
     if (!open) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
+    void loadTaskGenerationModelId(session, 'writing', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setModelId(id)
+    })
     void ipc.invokeWithProjectSession(session, 'db:consistency-exemption-list', session.projectPath).then(exemptions => {
       if (isProjectSessionCurrent(session) && exemptions.some(item => !item.revoked)) {
         setPreflight(current => current ?? { findings: [], exemptions })
       }
     }).catch(() => undefined)
-  }, [open])
+  }, [open, models, defaultModelId])
 
   /** expected 是发起时的那次打开：保存安排后接着开写时，作品已换就不写，蓝图与章号属于原来那部。 */
   const start = async (ignoreFindingsOnce: boolean, expected?: ProjectSessionContext) => {
@@ -99,8 +103,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
         case 'stale':
           return
         case 'started':
-          // 这些选项只用于本次写作；写完后再打开弹层，回到蓝图里的指导与默认模型。
-          setModelId(null)
+          // 指导与检索关键词只用于本次；模型按作品偏好记住，下次打开仍预填。
           setGuidance(null)
           setKnowledgeHint('')
           setPreflight(null)

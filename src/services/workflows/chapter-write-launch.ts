@@ -258,5 +258,7 @@ export async function launchChapterWrite({
     return { kind: 'blocked', message: workflowResourceConflictMessage(locale, resourceConflict.title) }
   }
   void useWorkflowStore.getState().startWorkflow(workflow, false)
+  const { saveTaskGenerationModelId } = await import('./task-generation-model-prefs')
+  void saveTaskGenerationModelId(session, 'writing', frozenGenerationModelId)
   return { kind: 'started' }
 }

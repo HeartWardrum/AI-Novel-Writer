@@ -18,24 +18,30 @@ describe('AI output failure presentation', () => {
   it('maps a structured content-filter code to a clear Chinese chapter-draft failure', () => {
     expect(presentWorkflowFailure('content_filter', 'provider-safe message', 'zh-CN', true)).toEqual({
       heading: '正文生成被内容策略拦截',
-      reason: '模型的内容安全策略拦截了这次输出。',
-      persistence: '本次未保存草稿或正文章节。请调整章节要求，或选择符合预期内容政策的模型后重试。',
+      reason: '模型的内容安全策略拦截了这次输出（常见于审核 / content_filter）。',
+      persistence: '本次未保存草稿或正文章节。',
+      guidance: '可换用内容策略更宽松的模型后重试；只影响下一次运行，不会改你的全局默认模型。',
+      action: 'retry-with-model',
+      actionLabel: '换模型重试',
     })
   })
 
   it('maps a structured content-filter code to an English explanation instead of exposing it as prose', () => {
     expect(presentWorkflowFailure('content_filter', 'provider-safe message', 'en-US', true)).toEqual({
       heading: 'Draft generation was blocked by the content policy',
-      reason: 'The model safety policy filtered this output.',
-      persistence: 'No draft or manuscript chapter was saved. Adjust the chapter request, or choose a model whose policy fits your intended permitted content, then try again.',
+      reason: 'The model safety policy filtered this output (often content_filter / moderation).',
+      persistence: 'No draft or manuscript chapter was saved.',
+      guidance: 'Retry with a model whose content policy better fits your intended text. This only affects the next run; your global default model is unchanged.',
+      action: 'retry-with-model',
+      actionLabel: 'Retry with another model',
     })
   })
 
-  it('keeps a legacy machine-looking error generic when no structured code was supplied', () => {
+  it('maps a legacy finish:content_filter string to the content-policy presentation', () => {
     const presentation = presentWorkflowFailure(undefined, 'finish:content_filter', 'zh-CN', true)
 
-    expect(presentation.reason).toBe('finish:content_filter')
-    expect(presentation.heading).not.toBe('正文生成被内容策略拦截')
+    expect(presentation.heading).toBe('正文生成被内容策略拦截')
+    expect(presentation.action).toBe('retry-with-model')
   })
 
   it('offers Novel configuration only for a project-configuration contributor', () => {

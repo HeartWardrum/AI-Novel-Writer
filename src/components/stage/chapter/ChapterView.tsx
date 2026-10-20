@@ -159,6 +159,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 paragraphIndent
                 content={tab.content ?? ''}
                 filePath={filePath}
+                chapterNumber={chapterNumber}
                 editable={editable}
                 hideStatusBar
                 onCharCountChange={setCharCount}

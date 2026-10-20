@@ -16,6 +16,10 @@ import {
   isGenerationModel,
   preferredGenerationModelId,
 } from '../../../services/workflows/chapter-write-launch'
+import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../../services/workflows/task-generation-model-prefs'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -27,7 +31,7 @@ import { useWorkflowStore } from '../../../stores/workflow-store'
 import { configFieldsToExpand, startConfigGeneration } from '../../dialogs/config-generation'
 import { AUDIENCE_EN, GENRE_EN } from '../../editor/novel-config-labels'
 import { NOVEL_GENRES, novelConfigSessionKey, useNovelConfigForm } from '../../editor/use-novel-config-form'
-import { captureProjectSession } from '../../project-session-gate'
+import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
 import { InkDialog } from '../InkDialog'
 import ModelMissingNotice from '../ModelMissingNotice'
@@ -99,8 +103,12 @@ function AiButton({ field, label, form, disabledReason }: { field: GeneratableFi
   const modelBlocked = Boolean(modelError) || generationModels.length === 0
 
   const openDialog = () => {
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
     setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
     setOpen(true)
+    void loadTaskGenerationModelId(session, 'setup', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setGenerationModelId(id)
+    })
   }
 
   return (
@@ -132,6 +140,8 @@ function AiButton({ field, label, form, disabledReason }: { field: GeneratableFi
               onClick={() => {
                 if (!selectedModelId || modelBlocked) return
                 setOpen(false)
+                const session = captureProjectSession(useProjectStore.getState().currentProject)
+                void saveTaskGenerationModelId(session, 'setup', selectedModelId)
                 void form.generateField(field, selectedModelId)
               }}
             >
@@ -373,11 +383,18 @@ function SetupSession({ projectKey }: { projectKey: string }) {
       projectSession: session,
       onGenerated: form.applyGeneratedTo(session),
       generationModelId,
-    })) setFillDialog(null)
+    })) {
+      void saveTaskGenerationModelId(session, 'setup', generationModelId)
+      setFillDialog(null)
+    }
   }
   const requestFill = () => {
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
     setFillModelId(preferredGenerationModelId(models, defaultModelId))
     setFillDialog({ fields: configFieldsToExpand(config, text) })
+    void loadTaskGenerationModelId(session, 'setup', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setFillModelId(id)
+    })
   }
   const goNext = async () => {
     if (form.dirty) {

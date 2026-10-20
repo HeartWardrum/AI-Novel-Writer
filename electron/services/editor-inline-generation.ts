@@ -1,5 +1,11 @@
 import { textHash, type DurableGenerationRun } from '../repositories/generation-run-repository'
-import type { EditorInlineInput, EditorInlineContext } from '../../src/shared/editor-inline-generation'
+import type {
+  EditorInlineContextBundle,
+  EditorInlineContextOptions,
+  EditorInlineInput,
+  EditorInlineContext,
+} from '../../src/shared/editor-inline-generation'
+import { EDITOR_INLINE_CONTEXT_WINDOW_CHARS } from '../../src/shared/editor-inline-generation'
 import type { WritingLanguage } from '../../src/shared/writing-language'
 import { composePromptSystemRole, type PromptTemplate } from '../../src/services/builtin-prompt-templates'
 import { renderPrompt } from '../../src/shared/render-prompt'
@@ -14,8 +20,18 @@ const presetInstructions = {
 } as const
 
 const PRESET_ACTIONS = new Set(Object.keys(presetInstructions))
-const INPUT_KEYS = new Set(['action', 'documentText', 'from', 'to', 'selectedText', 'editInstruction'])
+const INPUT_KEYS = new Set([
+  'action', 'documentText', 'from', 'to', 'selectedText', 'editInstruction',
+  'chapterNumber', 'contextOptions', 'contextBundle',
+])
+const OPTION_KEYS = new Set([
+  'includePreceding', 'includeFollowing', 'includeBlueprint', 'includeGlobalGuidance',
+])
+const BUNDLE_KEYS = new Set([
+  'precedingText', 'followingText', 'chapterBlueprint', 'globalGuidance',
+])
 const MAX_EDIT_INSTRUCTION_BYTES = 32 * 1024
+const MAX_BUNDLE_FIELD_CHARS = 12_000
 
 function editInstructionFor(context: EditorInlineContext): string {
   if (context.action === 'rewrite') {
@@ -28,23 +44,98 @@ function editInstructionFor(context: EditorInlineContext): string {
   return presetInstructions[context.action][context.writingLanguage === 'en-US' ? 1 : 0]
 }
 
+function sliceWindow(text: string, start: number, end: number): string {
+  return text.slice(Math.max(0, start), Math.min(text.length, end))
+}
+
+function deriveAdjacentBundle(
+  input: Pick<EditorInlineInput, 'documentText' | 'from' | 'to'>,
+  options: EditorInlineContextOptions | undefined,
+): Pick<EditorInlineContextBundle, 'precedingText' | 'followingText'> {
+  const window = EDITOR_INLINE_CONTEXT_WINDOW_CHARS
+  return {
+    ...(options?.includePreceding
+      ? { precedingText: sliceWindow(input.documentText, input.from - window, input.from) }
+      : {}),
+    ...(options?.includeFollowing
+      ? { followingText: sliceWindow(input.documentText, input.to, input.to + window) }
+      : {}),
+  }
+}
+
+function normalizeOptions(value: unknown): EditorInlineContextOptions | undefined {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).some(key => !OPTION_KEYS.has(key))) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  const source = value as Record<string, unknown>
+  for (const key of OPTION_KEYS) {
+    if (typeof source[key] !== 'boolean') throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  }
+  return {
+    includePreceding: source.includePreceding as boolean,
+    includeFollowing: source.includeFollowing as boolean,
+    includeBlueprint: source.includeBlueprint as boolean,
+    includeGlobalGuidance: source.includeGlobalGuidance as boolean,
+  }
+}
+
+function normalizeBundleField(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > MAX_BUNDLE_FIELD_CHARS) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  return trimmed
+}
+
+function normalizeBundle(
+  value: unknown,
+  options: EditorInlineContextOptions | undefined,
+): EditorInlineContextBundle | undefined {
+  if (value === undefined) {
+    return options ? {} : undefined
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).some(key => !BUNDLE_KEYS.has(key))) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  const source = value as Record<string, unknown>
+  const chapterBlueprint = normalizeBundleField(source.chapterBlueprint)
+  const globalGuidance = normalizeBundleField(source.globalGuidance)
+  if (chapterBlueprint && !options?.includeBlueprint) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  if (globalGuidance && !options?.includeGlobalGuidance) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  if (!options?.includeBlueprint && chapterBlueprint) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  const bundle: EditorInlineContextBundle = {
+    ...(chapterBlueprint ? { chapterBlueprint } : {}),
+    ...(globalGuidance ? { globalGuidance } : {}),
+  }
+  return bundle
+}
+
 function inputSnapshot(input: EditorInlineInput): EditorInlineInput {
-  return input.action === 'rewrite'
+  const options = input.contextOptions
+  const adjacent = deriveAdjacentBundle(input, options)
+  const bundle = input.contextBundle
     ? {
-        action: 'rewrite',
-        documentText: input.documentText,
-        from: input.from,
-        to: input.to,
-        selectedText: input.selectedText,
-        editInstruction: input.editInstruction!,
+        ...adjacent,
+        ...(options?.includeBlueprint && input.contextBundle.chapterBlueprint
+          ? { chapterBlueprint: input.contextBundle.chapterBlueprint }
+          : {}),
+        ...(options?.includeGlobalGuidance && input.contextBundle.globalGuidance
+          ? { globalGuidance: input.contextBundle.globalGuidance }
+          : {}),
       }
-    : {
-        action: input.action,
-        documentText: input.documentText,
-        from: input.from,
-        to: input.to,
-        selectedText: input.selectedText,
-      }
+    : options ? adjacent : undefined
+  const base = {
+    action: input.action,
+    documentText: input.documentText,
+    from: input.from,
+    to: input.to,
+    selectedText: input.selectedText,
+    ...(typeof input.chapterNumber === 'number' ? { chapterNumber: input.chapterNumber } : {}),
+    ...(options ? { contextOptions: { ...options } } : {}),
+    ...(bundle && Object.keys(bundle).length > 0 ? { contextBundle: bundle } : options ? { contextBundle: adjacent } : {}),
+  } as EditorInlineInput
+  return input.action === 'rewrite'
+    ? { ...base, action: 'rewrite', editInstruction: input.editInstruction! }
+    : base
 }
 
 export function validateEditorInlineInput(input: EditorInlineInput): EditorInlineInput {
@@ -54,6 +145,25 @@ export function validateEditorInlineInput(input: EditorInlineInput): EditorInlin
     || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from
     || input.to > input.documentText.length || input.documentText.slice(input.from, input.to) !== input.selectedText
     || Buffer.byteLength(input.documentText, 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  if (input.chapterNumber !== undefined
+    && (!Number.isSafeInteger(input.chapterNumber) || input.chapterNumber < 1)) {
+    throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  }
+  const contextOptions = normalizeOptions(input.contextOptions)
+  const authorBundle = normalizeBundle(input.contextBundle, contextOptions)
+  const adjacent = deriveAdjacentBundle(input, contextOptions)
+  const contextBundle: EditorInlineContextBundle | undefined = contextOptions
+    ? {
+        ...adjacent,
+        ...(contextOptions.includeBlueprint && authorBundle?.chapterBlueprint
+          ? { chapterBlueprint: authorBundle.chapterBlueprint }
+          : {}),
+        ...(contextOptions.includeGlobalGuidance && authorBundle?.globalGuidance
+          ? { globalGuidance: authorBundle.globalGuidance }
+          : {}),
+      }
+    : undefined
+
   if (input.action === 'rewrite') {
     if (typeof input.editInstruction !== 'string') throw new Error('GENERATION_EDITOR_INPUT_INVALID')
     const editInstruction = input.editInstruction.trim()
@@ -61,15 +171,21 @@ export function validateEditorInlineInput(input: EditorInlineInput): EditorInlin
       throw new Error('GENERATION_EDITOR_INPUT_INVALID')
     }
     return structuredClone({
-      action: 'rewrite',
+      action: 'rewrite' as const,
       documentText: input.documentText,
       from: input.from,
       to: input.to,
       selectedText: input.selectedText,
       editInstruction,
+      ...(typeof input.chapterNumber === 'number' ? { chapterNumber: input.chapterNumber } : {}),
+      ...(contextOptions ? { contextOptions } : {}),
+      ...(contextBundle ? { contextBundle } : {}),
     })
   }
   if (!PRESET_ACTIONS.has(input.action) || input.editInstruction !== undefined) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  if (contextOptions || authorBundle || input.chapterNumber !== undefined) {
+    throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  }
   return structuredClone({
     action: input.action,
     documentText: input.documentText,
@@ -99,9 +215,16 @@ export function readEditorInlineTask(run: DurableGenerationRun): GenerationTask 
   return structuredClone(task)
 }
 export function editorInlineTask(context: EditorInlineContext): GenerationTask {
-  const { template, writingLanguage } = context
+  const { template, writingLanguage, contextBundle } = context
   return { purpose: `editor-ai-${context.action}`, reasoningStage: context.action === 'refine' ? 'review' : 'drafting', output: 'visible-text', messages: [
     { role: 'system', content: composePromptSystemRole(template, writingLanguage) },
-    { role: 'user', content: renderPrompt(template, { edit_instruction: editInstructionFor(context), selected_text: context.selectedText }, writingLanguage) },
+    { role: 'user', content: renderPrompt(template, {
+      edit_instruction: editInstructionFor(context),
+      selected_text: context.selectedText,
+      preceding_text: contextBundle?.precedingText ?? '',
+      following_text: contextBundle?.followingText ?? '',
+      chapter_blueprint: contextBundle?.chapterBlueprint ?? '',
+      global_guidance: contextBundle?.globalGuidance ?? '',
+    }, writingLanguage) },
   ] }
 }

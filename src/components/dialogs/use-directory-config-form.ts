@@ -17,6 +17,10 @@ import {
   preferredGenerationModelId,
 } from '../../services/workflows/chapter-write-launch'
 import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../services/workflows/task-generation-model-prefs'
+import {
   captureProjectSession,
   isProjectSessionCurrent,
 } from '../project-session-gate'
@@ -116,14 +120,18 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
   useEffect(() => {
     if (!isOpen) return
     setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
+    const session = captureProjectSession(currentProject)
     let disposed = false
+    void loadTaskGenerationModelId(session, 'blueprint', models, defaultModelId).then(id => {
+      if (!disposed && isProjectSessionCurrent(session)) setGenerationModelId(id)
+    })
     void ipc.invoke('config:get').then(config => {
       if (!disposed) setTargetUnits(String(parsePlanningTargetUnits(config.blueprintTargetUnits)))
     }).catch(error => {
       if (!disposed) setLaunchError(error instanceof Error ? error.message : String(error))
     }).finally(() => { if (!disposed) setPreferenceLoading(false) })
     return () => { disposed = true; setPreferenceLoading(true) }
-  }, [defaultModelId, isOpen, models])
+  }, [currentProject, defaultModelId, isOpen, models])
   useEffect(() => {
     if (!isOpen || !currentProject) return
     const session = captureProjectSession(currentProject)
@@ -338,6 +346,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       const started = await onConfirm({ ...params, pacingGuidance: pacingGuidance || undefined }, frozenGenerationModelId)
       setLaunchError(null)
       if (!started) return
+      void saveTaskGenerationModelId(projectSession, 'blueprint', frozenGenerationModelId)
       onClose()
       toast.info(text('已提交：正在生成章节蓝图...', 'Submitted: generating chapter blueprints...'))
     } catch (error) {

@@ -7,10 +7,15 @@ import {
   isGenerationModel,
   preferredGenerationModelId,
 } from '../../services/workflows/chapter-write-launch'
+import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../services/workflows/task-generation-model-prefs'
 import { ARCH_STEP_NAMES, createDefaultArchitectureSelection, type ArchStepKey } from '../../services/architecture-step-selection'
 import { toast } from '../ui/Toast'
 import { useLocaleStore } from '../../stores/locale-store'
 import { ipc } from '../../services/ipc-client'
+import { captureProjectSession, isProjectSessionCurrent } from '../project-session-gate'
 import { assertPlanningActionRange, DEFAULT_PLANNING_ACTION_CHAPTERS, DEFAULT_PLANNING_TARGET_UNITS, parsePlanningTargetUnits, PLANNING_ACTION_CHAPTER_LIMIT, PLANNING_TARGET_UNITS_LIMIT, plotOutlineNextChapter, plotOutlineRangeEffect, type PlotOutlineRangeEffect, type PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
 
 /**
@@ -109,7 +114,11 @@ export function useArchitectureConfirmForm({
     setChecked(defaults)
     setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
     setGuardError(null)
-  }, [confirmed, currentProject?.novelConfig.totalChapters, defaultModelId, initialSelectedSteps, initialSynopsisRange, models, synopsisSource])
+    const session = captureProjectSession(currentProject)
+    void loadTaskGenerationModelId(session, 'architecture', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setGenerationModelId(id)
+    })
+  }, [confirmed, currentProject, defaultModelId, initialSelectedSteps, initialSynopsisRange, models, synopsisSource])
 
   useEffect(() => {
     if (isOpen && !wasOpen.current) {
@@ -256,6 +265,7 @@ export function useArchitectureConfirmForm({
         }
       }
       await onConfirm(selectedSteps, stepGuidance, resolution.range, target, frozenGenerationModelId)
+      void saveTaskGenerationModelId(captureProjectSession(currentProject), 'architecture', frozenGenerationModelId)
       onClose()
       const stepNames = selectedSteps.map(k => text(...ARCH_STEP_NAMES[k])).join(text('、', ', '))
       toast.info(text(`已提交：正在生成${stepNames}...`, `Submitted: generating ${stepNames}...`))

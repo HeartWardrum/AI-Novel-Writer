@@ -8,7 +8,14 @@ import { useWorkflowReasoningStore } from '../../../stores/workflow-reasoning-st
 import { useWorkflowStore, type WorkflowRun, type WorkflowStep } from '../../../stores/workflow-store'
 import { runProgress } from '../../../stores/navigation/stage-progress'
 import { CharacterProposalSelectionPanel } from '../../characters/CharacterProposalSelectionPanel'
-import { isCurrentSessionRun, openNovelConfigurationFor, runFailure, useResumePlotOutline } from '../../run/run-failure'
+import {
+  isCurrentSessionRun,
+  openNovelConfigurationFor,
+  runFailure,
+  useResumePlotOutline,
+  useRetryWithModel,
+} from '../../run/run-failure'
+import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
 import { ACTIVE_RUN_STATUSES, splitThinking } from '../../run/run-output'
 import { useReviewWaitLines } from '../../run/use-review-wait'
 import { useWorkflowConfirmation, type WorkflowConfirmation } from '../../run/use-workflow-confirmation'
@@ -251,7 +258,14 @@ function RunFailureNotice({ run, primary }: { run: WorkflowRun; primary: boolean
   const { presentation, errorCode, canResumeOutline } = runFailure(run)
   const current = useProjectStore(() => isCurrentSessionRun(run))
   const outline = useResumePlotOutline(run)
+  const modelRetry = useRetryWithModel(run)
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
+  const generationModels = models.filter(model => isGenerationModel(model) && model.id !== run.generationModelId)
+  const [retryModelId, setRetryModelId] = useState<string | null>(() => preferredGenerationModelId(generationModels, defaultModelId))
   const openConfig = presentation.action === 'open-novel-config' && presentation.actionLabel
+  const retryModel = presentation.action === 'retry-with-model' && presentation.actionLabel
+  const showActions = openConfig || canResumeOutline || retryModel
   return (
     <Notice tone="danger" title={presentation.heading}>
       <p>{presentation.reason}</p>
@@ -262,11 +276,39 @@ function RunFailureNotice({ run, primary }: { run: WorkflowRun; primary: boolean
         <p>{text('已完成的部分已保存为不完整大纲，不会被覆盖；续写会让模型接着上次的末尾写。',
           'The completed part is saved as an incomplete outline and will not be lost; continuing picks up where it stopped.')}</p>
       )}
-      {(openConfig || canResumeOutline) && (
+      {retryModel && (
+        <div className="pi-field" style={{ marginTop: '0.5rem' }}>
+          <label>{text('换用模型', 'Use model')}</label>
+          <select
+            className="pi-input"
+            value={retryModelId ?? ''}
+            disabled={!current || generationModels.length === 0 || modelRetry.retrying}
+            onChange={event => setRetryModelId(event.target.value || null)}
+          >
+            <option value="" disabled>{text('请选择另一模型', 'Select another model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {showActions && (
         <div className="run-notice-actions">
           {canResumeOutline && (
             <Button variant={primary ? 'primary' : 'secondary'} size="sm" disabled={!current || outline.resuming} onClick={() => void outline.resume()}>
               {outline.resuming ? text('正在从断点续写…', 'Resuming…') : text('继续生成情节大纲', 'Continue the plot outline')}
+            </Button>
+          )}
+          {retryModel && (
+            <Button
+              variant={primary ? 'primary' : 'secondary'}
+              size="sm"
+              disabled={!current || !retryModelId || modelRetry.retrying || generationModels.length === 0}
+              onClick={() => retryModelId && void modelRetry.retry(retryModelId)}
+            >
+              {modelRetry.retrying ? text('正在重试…', 'Retrying…') : presentation.actionLabel}
             </Button>
           )}
           {openConfig && (
@@ -276,7 +318,7 @@ function RunFailureNotice({ run, primary }: { run: WorkflowRun; primary: boolean
           )}
         </div>
       )}
-      {(openConfig || canResumeOutline) && !current && (
+      {showActions && !current && (
         <p className="run-note">{text('这次运行属于另一次打开的作品，回到那部作品后才能继续。', 'This run belongs to another open session of the book. Switch back to it to continue.')}</p>
       )}
     </Notice>

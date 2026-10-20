@@ -7,6 +7,10 @@ import type { HumanConfirmedReviewSnapshot } from '../../../shared/human-confirm
 import { chapterLabel } from '../../../shared/chapter-label'
 import { countDraftUnits } from '../../../shared/draft-units'
 import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
+import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../../services/workflows/task-generation-model-prefs'
 import { useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
@@ -114,6 +118,12 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const busy = draft.isChapterBusy
   const generationModels = models.filter(isGenerationModel)
   const selectedReviseModel = reviseModelId ?? preferredGenerationModelId(models, defaultModelId)
+  useEffect(() => {
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
+    void loadTaskGenerationModelId(session, 'revise', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setReviseModelId(id)
+    })
+  }, [models, defaultModelId, projectKey])
   // 有几份能合并时取最新的一份；过期的修稿不占主流程，只能查看或丢弃。
   const pending = draft.pendingRevisions.find(revision => revision.id === facts?.mergeable.at(-1))
   const stale = draft.pendingRevisions.filter(revision => facts?.stale.some(entry => entry.id === revision.id))
@@ -160,6 +170,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
       checklist.setChecklistError(error)
       setSheet(true)
     } else {
+      void saveTaskGenerationModelId(session, 'revise', selectedReviseModel)
       setSheet(false)
     }
   }
@@ -399,10 +410,41 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
         footer={(
           <>
             <Button variant="secondary" onClick={() => setAsk(null)}>{text('取消', 'Cancel')}</Button>
-            <Button variant="primary" onClick={() => { setAsk(null); void draft.refine(refinePrompt) }}>{text('开始修稿', 'Start revision')}</Button>
+            <Button
+              variant="primary"
+              disabled={!selectedReviseModel || generationModels.length === 0}
+              onClick={() => {
+                setAsk(null)
+                void draft.refine(refinePrompt, selectedReviseModel)
+              }}
+            >
+              {text('开始修稿', 'Start revision')}
+            </Button>
           </>
         )}
       >
+        <p className="run-note">
+          {text(
+            '将包含架构要点、本章蓝图、全局要求、邻近定稿摘录（系统材料预算内）。',
+            'Includes architecture highlights, this chapter’s blueprint, global guidance, and nearby finalized excerpts (within the material budget).',
+          )}
+        </p>
+        <div className="pi-field">
+          <label>{text('本次模型', 'Model for this run')} <em>{text('按作品记住', 'Remembered per book')}</em></label>
+          <select
+            className="pi-input"
+            value={selectedReviseModel ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => setReviseModelId(event.target.value || null)}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
         <label className="pi-field">
           <span>{text('附加修稿要求', 'Additional guidance')} <em>{text('可选', 'Optional')}</em></span>
           <textarea

@@ -4,7 +4,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { EditorState, type Extension } from '@codemirror/state'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
-import { Sparkles, Bold, Check } from 'lucide-react'
+import { Sparkles, Bold, Check as CheckIcon } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { InkDialog } from '../stage/InkDialog'
 import { paragraphIndent } from './paragraph-indent'
@@ -14,16 +14,27 @@ import type { MainGenerationRunHandle } from '../../services/generation/generati
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { useLLMStore } from '../../stores/llm-store'
 import type { GenerationReasoningStage } from '../../shared/reasoning-types'
-import type { EditorInlineAction, EditorInlineInput } from '../../shared/editor-inline-generation'
+import type { EditorInlineAction, EditorInlineContextOptions, EditorInlineInput } from '../../shared/editor-inline-generation'
+import { EDITOR_INLINE_CONTEXT_WINDOW_CHARS } from '../../shared/editor-inline-generation'
 import { isGenerationModel, preferredGenerationModelId } from '../../services/workflows/chapter-write-launch'
+import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../services/workflows/task-generation-model-prefs'
 import { countDraftUnits } from '../../shared/draft-units'
 import { useLocaleStore } from '../../stores/locale-store'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
+import { useProjectStore } from '../../stores/project-store'
+import { isProjectSessionCurrent } from '../project-session-gate'
+import { ipc } from '../../services/ipc-client'
+import { Check } from '../ui/Check'
 import { livePreview, paperHeadFacet, type PaperHead } from './live-preview'
 
 export type CodeMirrorEditorProps = {
   content: string
   filePath?: string
+  /** 当前章号；局部重写勾选蓝图时用来加载本章蓝图。 */
+  chapterNumber?: number
   recoveryHandle?: MainGenerationRunHandle
   onGenerationHandle?: (handle: MainGenerationRunHandle) => void
   editable?: boolean
@@ -38,6 +49,32 @@ export type CodeMirrorEditorProps = {
   fitContent?: boolean
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
+}
+
+const DEFAULT_REWRITE_CONTEXT: EditorInlineContextOptions = {
+  includePreceding: true,
+  includeFollowing: true,
+  includeBlueprint: false,
+  includeGlobalGuidance: false,
+}
+
+function formatBlueprintForRewrite(blueprint: {
+  title: string
+  role: string
+  purpose: string
+  keyEvents: string
+  characters: string[]
+  userGuidance?: string
+}): string {
+  const lines = [
+    `标题：${blueprint.title}`,
+    `角色：${blueprint.role}`,
+    `目的：${blueprint.purpose}`,
+    `关键事件：${blueprint.keyEvents}`,
+    `出场人物：${blueprint.characters.join('、')}`,
+  ]
+  if (blueprint.userGuidance?.trim()) lines.push(`写作指导：${blueprint.userGuidance.trim()}`)
+  return lines.join('\n')
 }
 
 type EditorAIAction = {
@@ -62,6 +99,7 @@ const REWRITE_ACTION = {
 export default function CodeMirrorEditor({
   content,
   filePath,
+  chapterNumber,
   recoveryHandle,
   onGenerationHandle,
   editable = true,
@@ -143,9 +181,18 @@ export default function CodeMirrorEditor({
   const [rewriteAsk, setRewriteAsk] = useState(false)
   const [rewritePrompt, setRewritePrompt] = useState('')
   const [rewriteModelId, setRewriteModelId] = useState<string | null>(null)
+  const [rewriteContext, setRewriteContext] = useState<EditorInlineContextOptions>(DEFAULT_REWRITE_CONTEXT)
+  const [rewriteContextNote, setRewriteContextNote] = useState<string | null>(null)
   const rewriteAskRef = useRef(false)
   useLayoutEffect(() => { rewriteAskRef.current = rewriteAsk }, [rewriteAsk])
   const selectedRewriteModelId = rewriteModelId ?? preferredGenerationModelId(models, defaultModelId)
+  const selectionLen = selectionRange ? selectionRange.to - selectionRange.from : 0
+  const precedingPreviewLen = selectionRange
+    ? Math.min(EDITOR_INLINE_CONTEXT_WINDOW_CHARS, selectionRange.from)
+    : 0
+  const followingPreviewLen = selectionRange && editorRef.current?.view
+    ? Math.min(EDITOR_INLINE_CONTEXT_WINDOW_CHARS, editorRef.current.view.state.doc.length - selectionRange.to)
+    : 0
   const aiRequestSequenceRef = useRef(0)
   const aiTargetRef = useRef<{
     requestSequence: number
@@ -415,15 +462,25 @@ export default function CodeMirrorEditor({
   const openRewriteDialog = () => {
     if (!selectionRange || !editorRef.current?.view || !editable) return
     setRewritePrompt('')
+    setRewriteContext(DEFAULT_REWRITE_CONTEXT)
+    setRewriteContextNote(null)
     setRewriteModelId(preferredGenerationModelId(models, defaultModelId))
     setRewriteAsk(true)
     setBubbleOpen(false)
+    const session = getActiveProjectSessionContext()
+    void loadTaskGenerationModelId(session, 'rewrite', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setRewriteModelId(id)
+    })
   }
 
   // AI 菜单处理：结果先在选区浮层预览，确认后才替换正文。
   const handleAIAction = async (
     action: { key: EditorInlineAction; label: readonly [string, string] },
-    options: { editInstruction?: string; modelId?: string } = {},
+    options: {
+      editInstruction?: string
+      modelId?: string
+      contextOptions?: EditorInlineContextOptions
+    } = {},
   ) => {
     let requestSequence: number | null = null
     try {
@@ -438,6 +495,38 @@ export default function CodeMirrorEditor({
         || ''
       if (action.key === 'rewrite' && !modelId) return
       requestSequence = ++aiRequestSequenceRef.current
+      let contextOptions = options.contextOptions
+      let contextBundle: EditorInlineInput['contextBundle']
+      if (action.key === 'rewrite' && contextOptions) {
+        const notes: string[] = []
+        contextBundle = {}
+        if (contextOptions.includeBlueprint) {
+          if (!chapterNumber) {
+            notes.push(uiText('本章无章号，未附蓝图', 'No chapter number; blueprint omitted'))
+            contextOptions = { ...contextOptions, includeBlueprint: false }
+          } else {
+            const blueprint = await ipc.invokeWithProjectSession(
+              session, 'db:blueprint-get', chapterNumber, session.projectPath,
+            )
+            if (!isProjectSessionCurrent(session)) return
+            if (blueprint) {
+              contextBundle.chapterBlueprint = formatBlueprintForRewrite(blueprint)
+            } else {
+              notes.push(uiText('本章无蓝图', 'No blueprint for this chapter'))
+              contextOptions = { ...contextOptions, includeBlueprint: false }
+            }
+          }
+        }
+        if (contextOptions.includeGlobalGuidance) {
+          const guidance = useProjectStore.getState().currentProject?.novelConfig.globalGuidance?.trim() ?? ''
+          if (guidance) contextBundle.globalGuidance = guidance
+          else {
+            notes.push(uiText('未设置全局创作要求', 'No global guidance configured'))
+            contextOptions = { ...contextOptions, includeGlobalGuidance: false }
+          }
+        }
+        if (notes.length) setRewriteContextNote(notes.join(' · '))
+      }
       const input: EditorInlineInput = action.key === 'rewrite'
         ? {
             action: 'rewrite',
@@ -446,6 +535,9 @@ export default function CodeMirrorEditor({
             selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to),
             documentText: view.state.doc.toString(),
             editInstruction: editInstruction!,
+            ...(typeof chapterNumber === 'number' ? { chapterNumber } : {}),
+            ...(contextOptions ? { contextOptions } : {}),
+            ...(contextBundle && Object.keys(contextBundle).length > 0 ? { contextBundle } : {}),
           }
         : {
             action: action.key,
@@ -462,6 +554,7 @@ export default function CodeMirrorEditor({
       setActiveAIAction(uiText(...action.label)); setAiResult(''); setAiError(null); setCanResumeAI(false); setBubbleOpen(true)
       const recovery = await client.open({ input, modelId, uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
+      if (action.key === 'rewrite') void saveTaskGenerationModelId(session, 'rewrite', modelId)
       onGenerationHandle?.(recovery.view.handle)
       const receipt = await client.execute()
       if (requestSequence !== aiRequestSequenceRef.current) return
@@ -647,7 +740,7 @@ export default function CodeMirrorEditor({
                   size="sm"
                   disabled={aiResult === '' || aiError !== null}
                   onClick={handleAcceptAI}
-                ><Check size={13} aria-hidden="true" />{uiText('替换', 'Replace')}</Button>
+                ><CheckIcon size={13} aria-hidden="true" />{uiText('替换', 'Replace')}</Button>
               </div>
             </div>
           ) : (
@@ -692,6 +785,7 @@ export default function CodeMirrorEditor({
             setRewriteAsk(false)
             setRewritePrompt('')
             setRewriteModelId(null)
+            setRewriteContextNote(null)
             if (selectionRange && aiResult === null) setBubbleOpen(true)
           }
         }}
@@ -707,6 +801,7 @@ export default function CodeMirrorEditor({
               setRewriteAsk(false)
               setRewritePrompt('')
               setRewriteModelId(null)
+              setRewriteContextNote(null)
               if (selectionRange && aiResult === null) setBubbleOpen(true)
             }}>{uiText('取消', 'Cancel')}</Button>
             <Button
@@ -715,17 +810,57 @@ export default function CodeMirrorEditor({
               onClick={() => {
                 const instruction = rewritePrompt.trim()
                 if (!instruction || !selectedRewriteModelId) return
+                const contextOptions = { ...rewriteContext }
                 setRewriteAsk(false)
                 setRewritePrompt('')
                 setRewriteModelId(null)
-                void handleAIAction(REWRITE_ACTION, { editInstruction: instruction, modelId: selectedRewriteModelId })
+                void handleAIAction(REWRITE_ACTION, {
+                  editInstruction: instruction,
+                  modelId: selectedRewriteModelId,
+                  contextOptions,
+                })
               }}
             >{uiText('开始重写', 'Start rewrite')}</Button>
           </>
         )}
       >
+        <p className="run-note">
+          {uiText(
+            `将发送：选中正文 ${selectionLen} 字 + 改写要求`,
+            `Will send: ${selectionLen} selected characters + rewrite guidance`,
+          )}
+        </p>
+        <div className="pi-field">
+          <span>{uiText('附加上下文', 'Extra context')}</span>
+          <div className="stage-ch-checks">
+            <Check
+              checked={rewriteContext.includePreceding}
+              onChange={checked => setRewriteContext(current => ({ ...current, includePreceding: checked }))}
+              label={uiText(`前文（最多 ${EDITOR_INLINE_CONTEXT_WINDOW_CHARS} 字，约 ${precedingPreviewLen}）`, `Preceding (up to ${EDITOR_INLINE_CONTEXT_WINDOW_CHARS} chars, ~${precedingPreviewLen})`)}
+            />
+            <Check
+              checked={rewriteContext.includeFollowing}
+              onChange={checked => setRewriteContext(current => ({ ...current, includeFollowing: checked }))}
+              label={uiText(`后文（最多 ${EDITOR_INLINE_CONTEXT_WINDOW_CHARS} 字，约 ${followingPreviewLen}）`, `Following (up to ${EDITOR_INLINE_CONTEXT_WINDOW_CHARS} chars, ~${followingPreviewLen})`)}
+            />
+            <Check
+              checked={rewriteContext.includeBlueprint}
+              onChange={checked => setRewriteContext(current => ({ ...current, includeBlueprint: checked }))}
+              label={uiText(
+                chapterNumber ? '本章蓝图' : '本章蓝图（当前无章号）',
+                chapterNumber ? 'Chapter blueprint' : 'Chapter blueprint (no chapter number)',
+              )}
+            />
+            <Check
+              checked={rewriteContext.includeGlobalGuidance}
+              onChange={checked => setRewriteContext(current => ({ ...current, includeGlobalGuidance: checked }))}
+              label={uiText('全局创作要求', 'Global guidance')}
+            />
+          </div>
+          {rewriteContextNote && <p className="run-note">{rewriteContextNote}</p>}
+        </div>
         <label className="pi-field">
-          <span>{uiText('本次模型', 'Model for this run')} <em>{uiText('只用于这一次', 'This run only')}</em></span>
+          <span>{uiText('本次模型', 'Model for this run')} <em>{uiText('按作品记住', 'Remembered per book')}</em></span>
           <select
             className="pi-input"
             aria-label={uiText('本次模型', 'Model for this run')}

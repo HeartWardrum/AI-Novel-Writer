@@ -820,6 +820,9 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           ?? (error instanceof Error ? error.message : String(error))
         const failureCode = getBoundedCompletionFailureCode(error)
           ?? promptBudgetFailure?.failureCode
+          ?? (errorMsg === 'finish:content_filter' || errorMsg.includes('content_filter')
+            ? 'content_filter' as const
+            : undefined)
         const errorCode = errorCodeFromUnknown(error)
         updateStepById(set, run.id, i, {
           status: 'failed',
@@ -841,6 +844,22 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           `[失败] [${definition.title}] 步骤: ${stepDef.name} — ${errorMsg}`,
           `[Failed] [${definition.title}] Step: ${stepDef.name} — ${errorMsg}`,
         ), context.uiLocale)
+        if (failureCode === 'content_filter') {
+          void import('../components/ui/ActionToast').then(({ actionToast }) => {
+            actionToast.show({
+              type: 'error',
+              message: uiText(
+                context.uiLocale,
+                '内容策略拦截 · 打开运行表可换模重试',
+                'Blocked by content policy · Open the run sheet to retry with another model',
+              ),
+              actions: [{
+                label: uiText(context.uiLocale, '打开运行表', 'Open run sheet'),
+                onClick: () => navigate({ kind: 'run', facet: 'tasks' }),
+              }],
+            })
+          })
+        }
         break
       }
     }

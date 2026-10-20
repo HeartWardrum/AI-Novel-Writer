@@ -7,8 +7,19 @@ export interface WorkflowFailurePresentation {
   reason: string
   persistence?: string
   guidance?: string
-  action?: 'open-novel-config'
+  action?: 'open-novel-config' | 'retry-with-model'
   actionLabel?: string
+}
+
+/** 将裸 finish:content_filter 等字样归一为结构化失败码。 */
+export function normalizeWorkflowFailureCode(
+  failureCode: WorkflowFailureCode | undefined,
+  error: string | undefined,
+): WorkflowFailureCode | undefined {
+  if (failureCode) return failureCode
+  const raw = error?.trim() ?? ''
+  if (raw === 'finish:content_filter' || raw.includes('content_filter')) return 'content_filter'
+  return undefined
 }
 
 const NOVEL_CONFIG_SECTIONS = new Set([
@@ -109,6 +120,7 @@ export function presentWorkflowFailure(
   promptBudgetReport?: PromptBudgetReport,
   activity?: WorkflowStep['generationActivity'],
 ): WorkflowFailurePresentation {
+  failureCode = normalizeWorkflowFailureCode(failureCode, error)
   if (failureCode === 'prompt_budget_exhausted') {
     const adjustment = promptBudgetAdjustment(promptBudgetReport, locale)
     return locale === 'zh-CN'
@@ -160,13 +172,19 @@ export function presentWorkflowFailure(
     return locale === 'zh-CN'
       ? {
           heading: '正文生成被内容策略拦截',
-          reason: '模型的内容安全策略拦截了这次输出。',
-          persistence: '本次未保存草稿或正文章节。请调整章节要求，或选择符合预期内容政策的模型后重试。',
+          reason: '模型的内容安全策略拦截了这次输出（常见于审核 / content_filter）。',
+          persistence: '本次未保存草稿或正文章节。',
+          guidance: '可换用内容策略更宽松的模型后重试；只影响下一次运行，不会改你的全局默认模型。',
+          action: 'retry-with-model',
+          actionLabel: '换模型重试',
         }
       : {
           heading: 'Draft generation was blocked by the content policy',
-          reason: 'The model safety policy filtered this output.',
-          persistence: 'No draft or manuscript chapter was saved. Adjust the chapter request, or choose a model whose policy fits your intended permitted content, then try again.',
+          reason: 'The model safety policy filtered this output (often content_filter / moderation).',
+          persistence: 'No draft or manuscript chapter was saved.',
+          guidance: 'Retry with a model whose content policy better fits your intended text. This only affects the next run; your global default model is unchanged.',
+          action: 'retry-with-model',
+          actionLabel: 'Retry with another model',
         }
   }
 

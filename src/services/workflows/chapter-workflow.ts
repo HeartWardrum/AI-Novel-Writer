@@ -59,6 +59,8 @@ export interface RefineOnlyParams {
   draftContent: string
   sourceDraft: FrozenDraftSourceIdentity
   userRefinePrompt?: string
+  /** Renderer-owned selection for this revise run. */
+  generationModelId?: string
 }
 
 export interface RefineFromReviewParams {
@@ -283,6 +285,7 @@ export function createRefineOnlyWorkflow(
   sourceProjectSession: ProjectSessionContext,
 ): WorkflowDefinition {
   const uiLocale = chapterWorkflowLocale()
+  const generationModelId = params.generationModelId?.trim() || undefined
   const frozenParams = Object.freeze({
     ...params,
     sourceDraft: Object.freeze({ ...params.sourceDraft }),
@@ -292,6 +295,7 @@ export function createRefineOnlyWorkflow(
     projectPath: params.projectPath,
     projectSession: workflowProjectSession(params.projectPath, sourceProjectSession),
     uiLocale,
+    ...(generationModelId ? { generationModelId } : {}),
     resourceKeys: [workflowResourceKey('chapter', params.chapterNumber)],
     readResourceKeys: CHAPTER_CONTEXT_READ_RESOURCE_KEYS,
     title: localize(uiLocale,

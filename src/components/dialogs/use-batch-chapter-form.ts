@@ -26,6 +26,10 @@ import {
   isGenerationModel,
   preferredGenerationModelId,
 } from '../../services/workflows/chapter-write-launch'
+import {
+  loadTaskGenerationModelId,
+  saveTaskGenerationModelId,
+} from '../../services/workflows/task-generation-model-prefs'
 
 export interface BatchChapterProps {
   isOpen: boolean
@@ -76,6 +80,9 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession) return
     let disposed = false
+    void loadTaskGenerationModelId(projectSession, 'writing', models, defaultModelId).then(id => {
+      if (!disposed && isProjectSessionCurrent(projectSession)) setGenerationModelId(id)
+    })
     const loadAuthority = async () => {
       setAuthorityLoading(true)
       try {
@@ -93,7 +100,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
     }
     void loadAuthority()
     return () => { disposed = true }
-  }, [currentProject, isOpen, locale])
+  }, [currentProject, defaultModelId, isOpen, locale, models])
 
   useEffect(() => {
     if (!isOpen) return
@@ -214,6 +221,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
         return
       }
       void startWorkflow(workflow)
+      void saveTaskGenerationModelId(projectSession, 'writing', frozenGenerationModelId)
       navigate({ kind: 'run', facet: 'tasks' })
       addLog('info', frozenCompletionMode === 'draft_review'
         ? (frozenLocale === 'en-US'

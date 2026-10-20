@@ -267,7 +267,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
   }
 
   /** 执行 AI 修稿（含用户自定义提示词） */
-  const refine = async (userRefinePrompt: string) => {
+  const refine = async (userRefinePrompt: string, generationModelId?: string | null) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectMatches || !currentProject || !meta || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
     try {
@@ -276,6 +276,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       const { createRefineOnlyWorkflow } = await import('../../services/workflows/chapter-workflow')
       if (!isProjectSessionCurrent(projectSession)) return
       if (!isFrozenAISourceCurrent(source.body, source.sourceDraft)) return
+      const modelId = generationModelId?.trim() || undefined
 
       useWorkflowStore.getState().startWorkflow(createRefineOnlyWorkflow({
         projectPath: projectSession.projectPath,
@@ -285,7 +286,12 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         draftContent: source.body,
         sourceDraft: source.sourceDraft,
         userRefinePrompt: userRefinePrompt.trim() || undefined,
+        ...(modelId ? { generationModelId: modelId } : {}),
       }, projectSession), false)
+      if (modelId) {
+        const { saveTaskGenerationModelId } = await import('../../services/workflows/task-generation-model-prefs')
+        void saveTaskGenerationModelId(projectSession, 'revise', modelId)
+      }
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
       toast.error(text(`修稿启动失败：${e}`, 'Could not start AI revision.'))
