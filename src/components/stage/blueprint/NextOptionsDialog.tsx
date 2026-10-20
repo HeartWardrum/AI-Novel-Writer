@@ -29,6 +29,18 @@ const MODES: { id: BlueprintNextMode; zh: string; en: string }[] = [
   { id: 'bad', zh: '坏选项', en: 'Bad options' },
 ]
 
+function blueprintNextErrorMessage(error: unknown, text: (zh: string, en: string) => string): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  if (/CANCELLED/u.test(raw)) return ''
+  if (/GENERATION_BLUEPRINT_NEXT_BLUEPRINT_REQUIRED/u.test(raw)) {
+    return text(
+      '还没有可用的本章蓝图。请先保存这一章，并确认章号没有超过作品设定的总章数。',
+      'This chapter has no saved blueprint yet. Save the chapter first, and make sure its number is within the book’s total chapter count.',
+    )
+  }
+  return text('生成失败，请稍后重试。', 'Generation failed. Try again in a moment.')
+}
+
 function modeHint(mode: BlueprintNextMode, text: (zh: string, en: string) => string): string {
   switch (mode) {
     case 'function':
@@ -141,9 +153,9 @@ export default function NextOptionsDialog({ open, onOpenChange, blueprint, onApp
       void saveTaskGenerationModelId(session, 'blueprint', selectedModelId)
     } catch (cause) {
       if (!isProjectSessionCurrent(session)) return
-      const message = cause instanceof Error ? cause.message : String(cause)
-      if (message.includes('CANCELLED')) return
-      setError(message || text('生成失败。', 'Generation failed.'))
+      const message = blueprintNextErrorMessage(cause, text)
+      if (!message) return
+      setError(message)
     } finally {
       if (clientRef.current === client) {
         client.detach()
