@@ -9,8 +9,10 @@ import { countDraftUnits } from '../../../shared/draft-units'
 import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
 import {
   loadTaskGenerationModelId,
+  preferredNsfwUnlockModelId,
   saveTaskGenerationModelId,
 } from '../../../services/workflows/task-generation-model-prefs'
+import { hasNsfwMarkers } from '../../../shared/nsfw-soft-markers'
 import { useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
@@ -53,7 +55,7 @@ interface LatestReview {
   reloadCycle: () => Promise<ReviewCycleProjection | null>
 }
 
-type Ask = 'refine' | 'finalize' | 'delete' | 'discard' | null
+type Ask = 'refine' | 'nsfwUnlock' | 'finalize' | 'delete' | 'discard' | null
 
 /**
  * 章节动作条与它带出的侧页、对话框。主按钮随这一章所处的一步变化：AI 审稿（拆分按钮含检查维度）、按 N 项意见修稿、
@@ -94,6 +96,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const dims = reviewDimensions(text)
   const [checkedDims, setCheckedDims] = useState<Record<string, boolean>>(() => Object.fromEntries(dims.map(dim => [dim.key, true])))
   const [reviseModelId, setReviseModelId] = useState<string | null>(null)
+  const [nsfwUnlockModelId, setNsfwUnlockModelId] = useState<string | null>(null)
   const [ask, setAsk] = useState<Ask>(null)
   const [refinePrompt, setRefinePrompt] = useState('')
   const [mergeLater, setMergeLater] = useState(false)
@@ -118,10 +121,16 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const busy = draft.isChapterBusy
   const generationModels = models.filter(isGenerationModel)
   const selectedReviseModel = reviseModelId ?? preferredGenerationModelId(models, defaultModelId)
+  const selectedNsfwUnlockModel = nsfwUnlockModelId
+    ?? preferredNsfwUnlockModelId(models, defaultModelId)
+  const bodyHasNsfwMarkers = hasNsfwMarkers(tab.content ?? '')
   useEffect(() => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     void loadTaskGenerationModelId(session, 'revise', models, defaultModelId).then(id => {
       if (isProjectSessionCurrent(session)) setReviseModelId(id)
+    })
+    void loadTaskGenerationModelId(session, 'nsfwUnlock', models, defaultModelId).then(id => {
+      if (isProjectSessionCurrent(session)) setNsfwUnlockModelId(id)
     })
   }, [models, defaultModelId, projectKey])
   // 有几份能合并时取最新的一份；过期的修稿不占主流程，只能查看或丢弃。
@@ -226,6 +235,14 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   const moreGroups: MenuGroupSpec[] = [
     { id: 'chapter', items: [
       ...(editable ? [{ id: 'refine', label: text('直接修稿…', 'Revise directly…'), disabled: busy, onSelect: () => { setRefinePrompt(''); setAsk('refine') } }] : []),
+      ...(editable ? [{
+        id: 'nsfwUnlock',
+        label: bodyHasNsfwMarkers
+          ? text('NSFW 化…', 'NSFW unlock…')
+          : text('NSFW 化…（无标记）', 'NSFW unlock… (no markers)'),
+        disabled: busy || !bodyHasNsfwMarkers,
+        onSelect: () => setAsk('nsfwUnlock'),
+      }] : []),
       ...(editable && stage !== 'revised' ? [{ id: 'finalize', label: text('定稿…', 'Finalize…'), disabled: !draft.canFinalize, onSelect: () => setAsk('finalize') }] : []),
       ...(review && !sheetOpen && !focus ? [{ id: 'report', label: text('审稿报告', 'Review report'), onSelect: () => setSheet(true) }] : []),
       { id: 'history', label: text('版本历史', 'Version history'), onSelect: () => navigate({ kind: 'resource', page: 'history' }) },
@@ -455,6 +472,49 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
             onChange={event => setRefinePrompt(event.target.value)}
           />
         </label>
+      </InkDialog>
+      <InkDialog
+        open={ask === 'nsfwUnlock'}
+        onOpenChange={open => { if (!open) setAsk(null) }}
+        title={text('NSFW 化', 'NSFW unlock')}
+        description={text(
+          '只改 ⟦NSFW⟧…⟦/NSFW⟧ 标记内的段落；标记外程序校验不变。结果保存为新草稿版本，软版保留可回退。',
+          'Only text inside ⟦NSFW⟧…⟦/NSFW⟧ markers is rewritten; unmarked regions must stay unchanged. Saves a new draft version and keeps the soft draft for rollback.',
+        )}
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setAsk(null)}>{text('取消', 'Cancel')}</Button>
+            <Button
+              variant="primary"
+              disabled={!selectedNsfwUnlockModel || generationModels.length === 0 || !bodyHasNsfwMarkers}
+              onClick={() => {
+                setAsk(null)
+                void draft.nsfwUnlock(selectedNsfwUnlockModel)
+              }}
+            >
+              {text('开始 NSFW 化', 'Start NSFW unlock')}
+            </Button>
+          </>
+        )}
+      >
+        <div className="pi-field">
+          <label>{text('解锁模型（B）', 'Unlock model (B)')} <em>{text('偏好默认 Aion', 'Defaults to Aion when available')}</em></label>
+          <select
+            className="pi-input"
+            value={selectedNsfwUnlockModel ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => setNsfwUnlockModelId(event.target.value || null)}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}
+                {model.provider === 'aion' ? text('（Aion）', ' (Aion)') : ''}
+                {model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </InkDialog>
       <InkDialog
         open={ask === 'finalize'}

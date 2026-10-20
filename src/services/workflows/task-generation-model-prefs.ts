@@ -2,7 +2,21 @@ import { CANONICAL_PROJECT_DIRECTORY } from '../../shared/project-format'
 import type { ModelProfile, ProjectSessionContext } from '../../shared/ipc-channels'
 import { isProjectSessionCurrent } from '../../components/project-session-gate'
 import { ipc } from '../ipc-client'
-import { availableGenerationModelId, preferredGenerationModelId } from './chapter-write-launch'
+import {
+  availableGenerationModelId,
+  isGenerationModel,
+  preferredGenerationModelId,
+} from './chapter-write-launch'
+
+/** Prefer an Aion generation model when no per-task preference is stored. */
+export function preferredNsfwUnlockModelId(
+  models: ModelProfile[],
+  defaultModelId: string | null,
+): string | null {
+  const aion = models.find(model => isGenerationModel(model) && model.provider === 'aion')
+  return availableGenerationModelId(models, aion?.id)
+    ?? preferredGenerationModelId(models, defaultModelId)
+}
 
 /** 按作品记住各创作任务上次选用的生成模型。 */
 export const GENERATION_PREFS_REL = `${CANONICAL_PROJECT_DIRECTORY}/generation-preferences.json`
@@ -14,6 +28,7 @@ export type TaskGenerationModelKey =
   | 'writing'
   | 'rewrite'
   | 'revise'
+  | 'nsfwUnlock'
 
 export type TaskGenerationModelPrefs = Partial<Record<TaskGenerationModelKey, string>>
 
@@ -21,7 +36,7 @@ function asPrefs(value: unknown): TaskGenerationModelPrefs {
   if (!value || typeof value !== 'object') return {}
   const source = value as Record<string, unknown>
   const keys: TaskGenerationModelKey[] = [
-    'setup', 'architecture', 'blueprint', 'writing', 'rewrite', 'revise',
+    'setup', 'architecture', 'blueprint', 'writing', 'rewrite', 'revise', 'nsfwUnlock',
   ]
   const prefs: TaskGenerationModelPrefs = {}
   for (const key of keys) {
@@ -55,7 +70,9 @@ export async function loadTaskGenerationModelId(
   models: ModelProfile[],
   defaultModelId: string | null,
 ): Promise<string | null> {
-  const fallback = preferredGenerationModelId(models, defaultModelId)
+  const fallback = task === 'nsfwUnlock'
+    ? preferredNsfwUnlockModelId(models, defaultModelId)
+    : preferredGenerationModelId(models, defaultModelId)
   if (!session) return fallback
   const prefs = await readPrefs(session)
   if (!isProjectSessionCurrent(session)) return fallback

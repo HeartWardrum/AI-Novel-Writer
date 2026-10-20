@@ -63,6 +63,19 @@ export interface RefineOnlyParams {
   generationModelId?: string
 }
 
+export interface NsfwUnlockParams {
+  projectPath: string
+  chapterNumber: number
+  chapterTitle: string
+  draftPath: string
+  draftContent: string
+  sourceDraft: FrozenDraftSourceIdentity
+  /** Original (unsanitized) scale notes for model B. */
+  scaleNotes?: string
+  /** Renderer-owned selection for unlock model B. */
+  generationModelId?: string
+}
+
 export interface RefineFromReviewParams {
   projectPath: string
   chapterNumber: number
@@ -325,6 +338,65 @@ export function createRefineOnlyWorkflow(
       },
     ],
     onComplete: { mode: 'open', openResult: async () => { } },
+  }
+}
+
+export function createNsfwUnlockWorkflow(
+  params: NsfwUnlockParams,
+  sourceProjectSession: ProjectSessionContext,
+): WorkflowDefinition {
+  const uiLocale = chapterWorkflowLocale()
+  const generationModelId = params.generationModelId?.trim() || undefined
+  const frozenParams = Object.freeze({
+    ...params,
+    sourceDraft: Object.freeze({ ...params.sourceDraft }),
+  })
+  return {
+    type: 'chapter_creation',
+    projectPath: params.projectPath,
+    projectSession: workflowProjectSession(params.projectPath, sourceProjectSession),
+    uiLocale,
+    ...(generationModelId ? { generationModelId } : {}),
+    resourceKeys: [workflowResourceKey('chapter', params.chapterNumber)],
+    readResourceKeys: CHAPTER_CONTEXT_READ_RESOURCE_KEYS,
+    title: localize(uiLocale,
+      `第 ${params.chapterNumber} 章 · NSFW 化`,
+      `Chapter ${params.chapterNumber} · NSFW unlock`,
+    ),
+    steps: [
+      {
+        name: localize(uiLocale, 'NSFW 化', 'Unlock NSFW markers'),
+        description: localize(
+          uiLocale,
+          '只改标记内段落，校验标记外不变，保存为新草稿版本',
+          'Rewrite marked spans only, keep unmarked text unchanged, and save a new draft version',
+        ),
+        executor: async (step, context, callbacks) => {
+          if (frozenParams.scaleNotes) {
+            context.data.nsfwScaleNotes = frozenParams.scaleNotes
+          }
+          const { NsfwUnlockCommand } = await import('./commands/nsfw-unlock.command')
+          const cmd = new NsfwUnlockCommand({
+            draftPath: frozenParams.draftPath,
+            draftContent: frozenParams.draftContent,
+            sourceDraft: frozenParams.sourceDraft,
+            chapterNumber: frozenParams.chapterNumber,
+            chapterTitle: frozenParams.chapterTitle,
+            scaleNotes: frozenParams.scaleNotes,
+          })
+          return cmd.execute({ step, context, callbacks })
+        },
+      },
+    ],
+    onComplete: {
+      mode: 'open',
+      message: localize(
+        uiLocale,
+        `第${params.chapterNumber}章 NSFW 化完成`,
+        `Chapter ${params.chapterNumber} NSFW unlock finished`,
+      ),
+      openResult: async () => { },
+    },
   }
 }
 

@@ -5,6 +5,7 @@ import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import {
   createChapterWorkflow,
   createFinalizeWorkflow,
+  createNsfwUnlockWorkflow,
   createRefineFromReviewWorkflow,
   createRefineOnlyWorkflow,
   createReviewOnlyWorkflow,
@@ -57,6 +58,14 @@ describe('chapter workflow locale', () => {
         draftContent: 'Draft',
         sourceDraft,
       }, projectSession),
+      createNsfwUnlockWorkflow({
+        projectPath,
+        chapterNumber: 2,
+        chapterTitle: 'A New Term',
+        draftPath: 'ai-novel://draft/2',
+        draftContent: 'Draft',
+        sourceDraft,
+      }, projectSession),
       createRefineFromReviewWorkflow({
         projectPath,
         chapterNumber: 2,
@@ -83,6 +92,7 @@ describe('chapter workflow locale', () => {
       expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · Draft', step: 'Draft chapter' }),
       expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · Review', step: 'Review chapter' }),
       expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · Revise', step: 'Revise draft' }),
+      expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · NSFW unlock', step: 'Unlock NSFW markers' }),
       expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · Apply review', step: 'Revise from review' }),
       expect.objectContaining({ locale: 'en-US', title: 'Chapter 2 · Finalize', step: 'Finalize chapter' }),
     ])

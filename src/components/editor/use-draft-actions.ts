@@ -298,6 +298,62 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     }
   }
 
+  /** 按 ⟦NSFW⟧ 标记解锁软写段落，保存为新草稿版本（软版保留）。 */
+  const nsfwUnlock = async (generationModelId?: string | null, scaleNotes?: string) => {
+    const projectSession = captureProjectSession(currentProject)
+    if (!projectMatches || !currentProject || !meta || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
+    try {
+      const source = await freezeDraftSourceForAI(projectSession)
+      if (!source || !isProjectSessionCurrent(projectSession)) return
+      const { createNsfwUnlockWorkflow } = await import('../../services/workflows/chapter-workflow')
+      const { buildNsfwScaleNotes } = await import('../../shared/sanitize-chapter-info-for-soft-draft')
+      if (!isProjectSessionCurrent(projectSession)) return
+      if (!isFrozenAISourceCurrent(source.body, source.sourceDraft)) return
+      const modelId = generationModelId?.trim() || undefined
+
+      let notes = scaleNotes?.trim() ?? ''
+      if (!notes) {
+        const blueprint = await ipc.invokeWithProjectSession(
+          projectSession,
+          'db:blueprint-get',
+          meta.chapterNumber,
+          projectSession.projectPath,
+        )
+        if (!isProjectSessionCurrent(projectSession)) return
+        if (blueprint) {
+          notes = buildNsfwScaleNotes({
+            chapterNumber: blueprint.chapterNumber,
+            title: blueprint.title,
+            role: blueprint.role ?? '',
+            purpose: blueprint.purpose ?? '',
+            characters: blueprint.characters ?? [],
+            keyEvents: blueprint.keyEvents ?? '',
+            suspenseHook: blueprint.suspenseHook ?? '',
+            userGuidance: blueprint.userGuidance ?? '',
+          })
+        }
+      }
+
+      useWorkflowStore.getState().startWorkflow(createNsfwUnlockWorkflow({
+        projectPath: projectSession.projectPath,
+        chapterNumber: meta.chapterNumber,
+        chapterTitle: meta.chapterTitle ?? '未知标题',
+        draftPath: filePath,
+        draftContent: source.body,
+        sourceDraft: source.sourceDraft,
+        ...(notes ? { scaleNotes: notes } : {}),
+        ...(modelId ? { generationModelId: modelId } : {}),
+      }, projectSession), false)
+      if (modelId) {
+        const { saveTaskGenerationModelId } = await import('../../services/workflows/task-generation-model-prefs')
+        void saveTaskGenerationModelId(projectSession, 'nsfwUnlock', modelId)
+      }
+    } catch (e) {
+      if (!isProjectSessionCurrent(projectSession)) return
+      toast.error(text(`NSFW 化启动失败：${e}`, 'Could not start NSFW unlock.'))
+    }
+  }
+
   /** 执行 AI 审稿；reviewFocus 是勾选维度的 promptLabel 以顿号连接，全不勾时为空。 */
   const review = async (reviewFocus: string | undefined) => {
     const projectSession = captureProjectSession(currentProject)
@@ -585,7 +641,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     meta, status, isReadonly, isChapterBusy, isDirty, finalizationPending, finalizationConflict,
     pendingRevisions, reviews, loaded, reload,
     saving, saveOutcome, currentBodyRef, onBodyChange, save,
-    refine, review, canFinalize, finalize, retryManuscriptPublication, repairFinalize,
+    refine, nsfwUnlock, review, canFinalize, finalize, retryManuscriptPublication, repairFinalize,
     mergeData, closeMerge, openPendingRevision, completeMerge, discardRevisions,
   }
 }
