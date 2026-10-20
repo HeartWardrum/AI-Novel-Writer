@@ -40,6 +40,11 @@ export interface ChapterWorkflowOptions {
   generationModelId?: string
   /** Visible interface locale captured by the launcher. */
   uiLocale?: Locale
+  /**
+   * Soft-write NSFW markers for this draft run.
+   * Default true keeps the experimental soft-draft path when callers omit the flag.
+   */
+  softNsfwDraftMarkers?: boolean
 }
 
 export interface FrozenDraftSourceIdentity {
@@ -252,6 +257,7 @@ export function createChapterWorkflow(
 ): WorkflowDefinition {
   const uiLocale = chapterWorkflowLocale(options.uiLocale)
   const generationModelId = options.generationModelId?.trim() || undefined
+  const softNsfwDraftMarkers = options.softNsfwDraftMarkers !== false
   const chapterWordsTarget = normalizeChapterWordsTarget(chapterInfo.wordsTarget)
   const frozenChapterInfo = Object.freeze({ ...chapterInfo, wordsTarget: chapterWordsTarget })
   return {
@@ -276,6 +282,7 @@ export function createChapterWorkflow(
           'Generate a draft from the architecture, blueprint, and context',
         ),
         executor: async (step, context, callbacks) => {
+          context.data.softNsfwDraftMarkers = softNsfwDraftMarkers
           const { GenerateDraftCommand } = await import('./commands/generate-draft.command')
           const cmd = new GenerateDraftCommand(frozenChapterInfo)
           return cmd.execute({ step, context, callbacks })

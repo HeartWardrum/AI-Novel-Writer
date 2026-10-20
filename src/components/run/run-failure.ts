@@ -17,7 +17,12 @@ import {
   chapterWriteFormFromPrefill,
   launchChapterWrite,
 } from '../../services/workflows/chapter-write-launch'
-import { saveTaskGenerationModelId, type TaskGenerationModelKey } from '../../services/workflows/task-generation-model-prefs'
+import {
+  loadSoftNsfwDraftMarkers,
+  saveTaskGenerationModelId,
+  type TaskGenerationModelKey,
+} from '../../services/workflows/task-generation-model-prefs'
+import { useLLMStore } from '../../stores/llm-store'
 import { createRefineOnlyWorkflow } from '../../services/workflows/chapter-workflow'
 import { ipc } from '../../services/ipc-client'
 import { isProjectSessionCurrent } from '../project-session-gate'
@@ -133,6 +138,12 @@ export function useRetryWithModel(run: WorkflowRun) {
           { ...blueprintWritePrefill(blueprint), chapterNumber },
           chapterDefaultWordsTarget(wordsPerChapter),
         )
+        const softNsfwDraftMarkers = await loadSoftNsfwDraftMarkers(
+          session,
+          useLLMStore.getState().models,
+          modelId,
+        )
+        if (!isProjectSessionCurrent(session)) return
         const outcome = await launchChapterWrite({
           session,
           form,
@@ -140,6 +151,7 @@ export function useRetryWithModel(run: WorkflowRun) {
           wordsPerChapter,
           ignoreFindingsOnce: true,
           locale: run.uiLocale,
+          softNsfwDraftMarkers,
         })
         if (!isProjectSessionCurrent(session)) return
         if (outcome.kind === 'started') {

@@ -149,6 +149,8 @@ export interface ChapterWriteLaunch {
   /** 一致性预检提醒「仅本次忽略」后重新开始。 */
   ignoreFindingsOnce: boolean
   locale: Locale
+  /** 本次是否软写打标（消毒蓝图 + ⟦NSFW⟧ 合同）；启动成功后写入作品偏好。 */
+  softNsfwDraftMarkers: boolean
 }
 
 export type ChapterWriteOutcome =
@@ -167,7 +169,7 @@ export type ChapterWriteOutcome =
  * 权威章号、写作前置条件、一致性预检、参数持久化、ChapterInfo 组装与资源冲突检查都只在这一处。
  */
 export async function launchChapterWrite({
-  session, form, generationModelId, wordsPerChapter, ignoreFindingsOnce, locale,
+  session, form, generationModelId, wordsPerChapter, ignoreFindingsOnce, locale, softNsfwDraftMarkers,
 }: ChapterWriteLaunch): Promise<ChapterWriteOutcome> {
   const text = useLocaleStore.getState().text
   const addLog = useWorkflowStore.getState().addLog
@@ -250,7 +252,10 @@ export async function launchChapterWrite({
     knowledgeQueryHint: form.knowledgeHint,
     wordsTarget,
     defaultWordsTarget: wordsPerChapter ?? DEFAULT_CHAPTER_WORDS_TARGET,
-  }), session, { generationModelId: frozenGenerationModelId })
+  }), session, {
+    generationModelId: frozenGenerationModelId,
+    softNsfwDraftMarkers,
+  })
 
   if (!isProjectSessionCurrent(session)) return { kind: 'stale' }
   const resourceConflict = useWorkflowStore.getState().getResourceConflict(workflow)
@@ -258,7 +263,11 @@ export async function launchChapterWrite({
     return { kind: 'blocked', message: workflowResourceConflictMessage(locale, resourceConflict.title) }
   }
   void useWorkflowStore.getState().startWorkflow(workflow, false)
-  const { saveTaskGenerationModelId } = await import('./task-generation-model-prefs')
+  const {
+    saveTaskGenerationModelId,
+    saveSoftNsfwDraftMarkers,
+  } = await import('./task-generation-model-prefs')
   void saveTaskGenerationModelId(session, 'writing', frozenGenerationModelId)
+  void saveSoftNsfwDraftMarkers(session, softNsfwDraftMarkers)
   return { kind: 'started' }
 }

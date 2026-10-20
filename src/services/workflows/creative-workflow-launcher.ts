@@ -20,6 +20,8 @@ import { createArchitectureWorkflow, type ArchitectureWorkflowParams } from './a
 import { createChapterWorkflow } from './chapter-workflow'
 import { createDirectoryWorkflow, type DirectoryWorkflowParams } from './directory-workflow'
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
+import { defaultSoftNsfwDraftMarkers } from './task-generation-model-prefs'
+import { useLLMStore } from '../../stores/llm-store'
 import type { Locale } from '../../i18n/types'
 import type { AgentToolActionRef } from '../../shared/agent-generation'
 
@@ -153,6 +155,7 @@ async function definitionFor(
     if (!blueprint) {
       throw new Error(`第 ${intent.chapterNumber} 章蓝图不存在；请先运行 generate_blueprint 工作流`)
     }
+    const model = useLLMStore.getState().models.find(item => item.id === generationModelId)
     return createChapterWorkflow({
       projectPath: project.path,
       chapterNumber: blueprint.chapterNumber,
@@ -164,7 +167,11 @@ async function definitionFor(
       suspenseHook: blueprint.suspenseHook,
       userGuidance: blueprint.userGuidance,
       wordsTarget: normalizeChapterWordsTarget(project.novelConfig.wordsPerChapter),
-    }, projectSession, { generationModelId, uiLocale })
+    }, projectSession, {
+      generationModelId,
+      uiLocale,
+      softNsfwDraftMarkers: defaultSoftNsfwDraftMarkers(model),
+    })
   }
 
   throw new Error(`${intent.workflow} 需要明确的草稿 ID 和不可变正文快照；请先打开目标草稿后从编辑器启动`)

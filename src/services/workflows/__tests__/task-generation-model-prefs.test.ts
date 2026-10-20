@@ -13,7 +13,10 @@ vi.mock('../../../components/project-session-gate', () => ({
 }))
 
 import {
+  defaultSoftNsfwDraftMarkers,
+  loadSoftNsfwDraftMarkers,
   loadTaskGenerationModelId,
+  saveSoftNsfwDraftMarkers,
   saveTaskGenerationModelId,
 } from '../task-generation-model-prefs'
 import type { ModelProfile, ProjectSessionContext } from '../../../shared/ipc-channels'
@@ -24,11 +27,11 @@ const session = {
   projectPath: 'D:/novels/demo',
 } as ProjectSessionContext
 
-function model(id: string): ModelProfile {
+function model(id: string, provider: ModelProfile['provider'] = 'deepseek'): ModelProfile {
   return {
     id,
     name: id,
-    provider: 'deepseek',
+    provider,
     protocol: 'openai',
     modelName: id,
     apiKey: '',
@@ -71,6 +74,59 @@ describe('task generation model prefs', () => {
       'fs:write-json',
       'D:/novels/demo/.ai-novel/generation-preferences.json',
       { setup: 'glm-1', writing: 'aion-1' },
+      'D:/novels/demo',
+    )
+  })
+
+  it('defaults soft NSFW markers off for aion and on for others', () => {
+    expect(defaultSoftNsfwDraftMarkers(model('aion-1', 'aion'))).toBe(false)
+    expect(defaultSoftNsfwDraftMarkers(model('glm-1', 'deepseek'))).toBe(true)
+    expect(defaultSoftNsfwDraftMarkers(undefined)).toBe(true)
+  })
+
+  it('loads remembered soft markers when present', async () => {
+    invokeWithProjectSession.mockResolvedValueOnce({
+      success: true,
+      data: { softNsfwDraftMarkers: false, writing: 'glm-1' },
+    })
+    await expect(loadSoftNsfwDraftMarkers(session, [model('glm-1')], 'glm-1')).resolves.toBe(false)
+  })
+
+  it('falls back to model default when soft markers are unset', async () => {
+    invokeWithProjectSession.mockResolvedValueOnce({ success: true, data: { writing: 'aion-1' } })
+    await expect(
+      loadSoftNsfwDraftMarkers(session, [model('aion-1', 'aion')], 'aion-1'),
+    ).resolves.toBe(false)
+    invokeWithProjectSession.mockResolvedValueOnce({ success: true, data: {} })
+    await expect(
+      loadSoftNsfwDraftMarkers(session, [model('glm-1')], 'glm-1'),
+    ).resolves.toBe(true)
+  })
+
+  it('preserves model prefs when saving soft markers', async () => {
+    invokeWithProjectSession
+      .mockResolvedValueOnce({ success: true, data: { writing: 'glm-1' } })
+      .mockResolvedValueOnce({ success: true })
+    await saveSoftNsfwDraftMarkers(session, false)
+    expect(invokeWithProjectSession).toHaveBeenLastCalledWith(
+      session,
+      'fs:write-json',
+      'D:/novels/demo/.ai-novel/generation-preferences.json',
+      { writing: 'glm-1', softNsfwDraftMarkers: false },
+      'D:/novels/demo',
+    )
+  })
+
+  it('preserves soft markers when saving a model id', async () => {
+    invokeWithProjectSession
+      .mockResolvedValueOnce({ success: true, data: { softNsfwDraftMarkers: false } })
+      .mockResolvedValueOnce({ success: true })
+    await saveTaskGenerationModelId(session, 'writing', 'aion-1')
+    expect(invokeWithProjectSession).toHaveBeenLastCalledWith(
+      session,
+      'fs:write-json',
+      'D:/novels/demo/.ai-novel/generation-preferences.json',
+      { softNsfwDraftMarkers: false, writing: 'aion-1' },
       'D:/novels/demo',
     )
   })

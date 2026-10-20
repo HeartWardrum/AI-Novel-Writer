@@ -10,7 +10,11 @@ import {
   launchChapterWrite,
   preferredGenerationModelId,
 } from '../../../services/workflows/chapter-write-launch'
-import { loadTaskGenerationModelId } from '../../../services/workflows/task-generation-model-prefs'
+import {
+  defaultSoftNsfwDraftMarkers,
+  loadSoftNsfwDraftMarkers,
+  loadTaskGenerationModelId,
+} from '../../../services/workflows/task-generation-model-prefs'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { ChapterWritePrefill } from '../../../stores/layout-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -18,6 +22,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
+import { Check } from '../../ui/Check'
 import { useAnchoredLayer } from '../../ui/use-anchored-layer'
 import SplitAction from './SplitAction'
 import WritePreflight from './WritePreflight'
@@ -47,6 +52,8 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   const [modelId, setModelId] = useState<string | null>(null)
   const [guidance, setGuidance] = useState<string | null>(null)
   const [knowledgeHint, setKnowledgeHint] = useState('')
+  const [softMarkers, setSoftMarkers] = useState(true)
+  const [softMarkersTouched, setSoftMarkersTouched] = useState(false)
   const [preflight, setPreflight] = useState<ConsistencyPreflightResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -71,8 +78,12 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
     if (!open) return
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
-    void loadTaskGenerationModelId(session, 'writing', models, defaultModelId).then(id => {
-      if (isProjectSessionCurrent(session)) setModelId(id)
+    setSoftMarkersTouched(false)
+    void loadTaskGenerationModelId(session, 'writing', models, defaultModelId).then(async id => {
+      if (!isProjectSessionCurrent(session)) return
+      setModelId(id)
+      const soft = await loadSoftNsfwDraftMarkers(session, models, id)
+      if (isProjectSessionCurrent(session)) setSoftMarkers(soft)
     })
     void ipc.invokeWithProjectSession(session, 'db:consistency-exemption-list', session.projectPath).then(exemptions => {
       if (isProjectSessionCurrent(session) && exemptions.some(item => !item.revoked)) {
@@ -91,6 +102,11 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
     try {
       const wordsPerChapter = project?.novelConfig.wordsPerChapter
       const form = chapterWriteFormFromPrefill({ ...blueprint, userGuidance, chapterNumber }, chapterDefaultWordsTarget(wordsPerChapter))
+      // 主按钮未开弹层时也按当前预填模型解析偏好，与弹层路径一致。
+      const softNsfwDraftMarkers = softMarkersTouched || open
+        ? softMarkers
+        : await loadSoftNsfwDraftMarkers(session, models, selectedModelId)
+      if (!isProjectSessionCurrent(session)) return
       const outcome = await launchChapterWrite({
         session,
         form: { ...form, knowledgeHint },
@@ -98,14 +114,16 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
         wordsPerChapter,
         ignoreFindingsOnce,
         locale,
+        softNsfwDraftMarkers,
       })
       switch (outcome.kind) {
         case 'stale':
           return
         case 'started':
-          // 指导与检索关键词只用于本次；模型按作品偏好记住，下次打开仍预填。
+          // 指导与检索关键词只用于本次；模型与软写开关按作品偏好记住，下次打开仍预填。
           setGuidance(null)
           setKnowledgeHint('')
+          setSoftMarkersTouched(false)
           setPreflight(null)
           setMessage(null)
           close(false)
@@ -179,7 +197,15 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           className="pi-input"
           value={selectedModelId ?? ''}
           disabled={generationModels.length === 0}
-          onChange={event => { setModelId(event.target.value || null); setMessage(null) }}
+          onChange={event => {
+            const nextId = event.target.value || null
+            setModelId(nextId)
+            setMessage(null)
+            if (!softMarkersTouched) {
+              const model = models.find(item => item.id === nextId)
+              setSoftMarkers(defaultSoftNsfwDraftMarkers(model))
+            }
+          }}
         >
           <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
           {generationModels.map(model => (
@@ -189,6 +215,21 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           ))}
         </select>
         {modelError && <p className="stage-write-error" role="alert">{modelError}</p>}
+      </div>
+      <div className="pi-field">
+        <Check
+          checked={softMarkers}
+          onChange={checked => {
+            setSoftMarkersTouched(true)
+            setSoftMarkers(checked)
+          }}
+          label={text('软写打标（稍后可 NSFW 化）', 'Soft NSFW markers (unlock later)')}
+        />
+        <p className="stage-write-hint">
+          {softMarkers
+            ? text('委婉写敏感段并打上标记，之后可一键 NSFW 化。', 'Write sensitive passages gently with markers; unlock NSFW later.')
+            : text('按蓝图直写，不打软写标记（适合 Aion）。', 'Write from the blueprint as-is, without soft markers (good for Aion).')}
+        </p>
       </div>
       <div className="pi-field">
         <label htmlFor={guidanceFieldId}>{text('作者微操指导', 'Author guidance')} <em>{text('可选', 'Optional')}</em></label>

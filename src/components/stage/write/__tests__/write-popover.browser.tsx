@@ -191,7 +191,7 @@ function expectedLaunch(changes: { generationModelId: string; userGuidance: stri
       userGuidance, wordsTarget: 2600, knowledgeQueryHint,
     },
     session: SESSION,
-    options: { generationModelId },
+    options: { generationModelId, softNsfwDraftMarkers: true },
     fields: { type: 'chapter_creation', projectPath: PROJECT_PATH, uiLocale: 'zh-CN', generationModelId, chapterWordsTarget: 2600,
       resourceKeys: ['chapter:5'], readResourceKeys: ['novel-config', 'architecture', 'blueprints'], title: '第 5 章 · 写稿' },
     projectSession: SESSION,

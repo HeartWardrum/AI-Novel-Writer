@@ -392,11 +392,21 @@ function chapterLengthContractText(writingLanguage: WritingLanguage, targetUnits
   )
 }
 
+/** Whether this draft run should sanitize the blueprint and append soft-marker contract text. */
+export function softNsfwDraftMarkersEnabled(data: { softNsfwDraftMarkers?: unknown } | undefined): boolean {
+  return data?.softNsfwDraftMarkers !== false
+}
+
 /**
  * 固定解释规则与作者原文分开角色；规则仅按写作语言和是否有前驱分支。
  * 首稿、续写、压缩和历史恢复共用规则，但不扩大各次请求的操作范围。
+ * softMarkers=false 时不追加【软写标记】段（按蓝图直写）。
  */
-function chapterExecutionContractText(writingLanguage: WritingLanguage, chapterInfo: WriterChapterInfo): {
+export function chapterExecutionContractText(
+  writingLanguage: WritingLanguage,
+  chapterInfo: WriterChapterInfo,
+  softMarkers = true,
+): {
   rules: string
   authorItems: string
 } {
@@ -408,6 +418,14 @@ function chapterExecutionContractText(writingLanguage: WritingLanguage, chapterI
   const zhItems = executionItems.flatMap(item => item.value?.trim() ? [`- ${item.zhCN}: ${item.value}`] : []).join('\n')
   const enItems = executionItems.flatMap(item => item.value?.trim() ? [`- ${item.enUS}: ${item.value}`] : []).join('\n')
   const hasPredecessor = chapterInfo.chapterNumber > 1
+  const softZh = softMarkers
+    ? `
+【软写标记】情节与因果必须写完。涉及亲密/成人尺度、不能直写的描写须用文学暗示，并用成对标记包住降级段落：以 ${NSFW_OPEN} 开始、以 ${NSFW_CLOSE} 结束。禁止省略情节；不要向读者解释审核或安全策略；标记外保持正常叙事。`
+    : ''
+  const softEn = softMarkers
+    ? `
+[Soft NSFW markers] Plot and causality must still be completed. Intimate or adult-scale passages that cannot be written explicitly must use literary implication and wrap each softened passage in paired markers: start with ${NSFW_OPEN} and end with ${NSFW_CLOSE}. Do not omit plot events; do not explain moderation or safety policy to the reader; keep unmarked prose as normal narrative.`
+    : ''
   const rules = promptLanguageText(
     writingLanguage,
     `【本章执行合同】
@@ -418,8 +436,7 @@ function chapterExecutionContractText(writingLanguage: WritingLanguage, chapterI
 【本章事件兑现】作者或本章蓝图要求在本章发生的事件，必须在本章通过具体行动及其实际后果发生；复述、确认或记账前章已发生的结果不能替代本章要求发生的动作或结果。
 【前文待核实问题】定稿只发现疑点、提出猜测或写明待核实时，不能把某一解释、原因或哪一方出错写成已确认事实；本章可以通过新线索和调查推进并解决疑点，但须先写出与既有事实相容且足以支持结论的核验过程与证据，证据不足时保留疑点，结论的方向、时间和因果前后必须一致。
 ${chapterTimeContinuity('zh-CN')}` : ''}
-【操作边界】本合同不扩大本次请求的操作范围：续写及无进展恢复只接续已有正文，不重写旧文；已达目标篇幅时只补完断句并收束。压缩只删减既有正文，不新增情节或修补缺失事件。
-【软写标记】情节与因果必须写完。涉及亲密/成人尺度、不能直写的描写须用文学暗示，并用成对标记包住降级段落：以 ${NSFW_OPEN} 开始、以 ${NSFW_CLOSE} 结束。禁止省略情节；不要向读者解释审核或安全策略；标记外保持正常叙事。`,
+【操作边界】本合同不扩大本次请求的操作范围：续写及无进展恢复只接续已有正文，不重写旧文；已达目标篇幅时只补完断句并收束。压缩只删减既有正文，不新增情节或修补缺失事件。${softZh}`,
     `[Current-chapter execution contract]
 [Author tasks for this chapter] Follow the author text according to its meaning: events and outcomes explicitly required in this chapter must be realized through manuscript action or outcome. Ongoing states, knowledge boundaries, prohibitions, and style requests are narrative constraints; do not add or repeatedly confirm actions, dialogue, or explanations merely to prove compliance. Follow the reveal timing specified by the author; do not present what is reserved for later chapters as already completed. Still carry out explicitly requested recollections, flashbacks, actions, reveals, or repetition. Each later action must continue from the item ownership, character knowledge, and plan-completion state actually established in the prose.
 [Events this chapter may advance] New actions and outcomes consistent with established facts are allowed. Ordinary events need no added cost.${hasPredecessor ? `
@@ -428,8 +445,7 @@ ${chapterTimeContinuity('zh-CN')}` : ''}
 [Required events in this chapter] Events required by the author or this chapter blueprint to happen in this chapter must happen through concrete action and actual consequence here; merely repeating, confirming, or accounting for an outcome already completed in an earlier chapter cannot replace the action or outcome required in this chapter.
 [Unverified prior questions] If a finalized chapter only discovers a discrepancy, raises a suspicion, or leaves a question for verification, do not present an explanation, cause, or which side is wrong as confirmed. This chapter may pursue new clues and resolve the question, but first show a verification process and evidence sufficient for a conclusion consistent with established facts; otherwise keep it unresolved. The conclusion's direction, timing, and causality must remain consistent throughout.
 ${chapterTimeContinuity('en-US')}` : ''}
-[Operation boundary] This contract does not expand the current request's scope: continuation and no-progress recovery only append to existing prose without rewriting it; at the target length, only finish the truncated sentence and close. Condensing only cuts existing prose and must not add plot or repair missing events.
-[Soft NSFW markers] Plot and causality must still be completed. Intimate or adult-scale passages that cannot be written explicitly must use literary implication and wrap each softened passage in paired markers: start with ${NSFW_OPEN} and end with ${NSFW_CLOSE}. Do not omit plot events; do not explain moderation or safety policy to the reader; keep unmarked prose as normal narrative.`,
+[Operation boundary] This contract does not expand the current request's scope: continuation and no-progress recovery only append to existing prose without rewriting it; at the target length, only finish the truncated sentence and close. Condensing only cuts existing prose and must not add plot or repair missing events.${softEn}`,
   )
   return { rules, authorItems: promptLanguageText(writingLanguage, zhItems, enItems) }
 }
@@ -549,8 +565,9 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     const isFirstChapter = this.chapterInfo.chapterNumber === 1
     const templateKey = isFirstChapter ? 'first_chapter_draft' : 'next_chapter_draft'
     const fullChapterInfo = toWriterChapterInfo(this.chapterInfo)
-    const writerChapterInfo = sanitizeChapterInfoForSoftDraft(fullChapterInfo)
-    context.data.nsfwScaleNotes = buildNsfwScaleNotes(fullChapterInfo)
+    const soft = softNsfwDraftMarkersEnabled(context.data)
+    const writerChapterInfo = soft ? sanitizeChapterInfoForSoftDraft(fullChapterInfo) : fullChapterInfo
+    if (soft) context.data.nsfwScaleNotes = buildNsfwScaleNotes(fullChapterInfo)
     const targetChars = normalizeChapterWordsTarget(this.chapterInfo.wordsTarget, novelConfig.wordsPerChapter)
     const knowledgeQueryHint = this.chapterInfo.knowledgeQueryHint?.trim() ?? ''
     const searchQuery = [knowledgeQueryHint, writerChapterInfo.title, writerChapterInfo.keyEvents,
@@ -832,7 +849,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       ))
     }
     // 仅历史恢复沿用已记录的对账块；新 run 直接使用作者材料与定稿事实。
-    const chapterExecutionContract = chapterExecutionContractText(writingLanguage, writerChapterInfo)
+    const chapterExecutionContract = chapterExecutionContractText(writingLanguage, writerChapterInfo, soft)
     const systemRole = `${promptBuilder.getSystemRole()}\n\n${chapterExecutionContract.rules}`
     const composeInitialPrompt = (reconciliationBlock: string) => [chapterMaterials.text, promptBuilder.build(),
       reconciliationBlock, chapterExecutionContract.authorItems, chapterLengthContract]
