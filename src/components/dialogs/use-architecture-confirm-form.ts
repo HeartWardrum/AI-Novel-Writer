@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProjectStore } from '../../stores/project-store'
+import { useLLMStore } from '../../stores/llm-store'
 import { guardArchitectureGeneration, guardCharacterRegeneration } from '../../services/workflow-guards'
+import {
+  generationModelError,
+  isGenerationModel,
+  preferredGenerationModelId,
+} from '../../services/workflows/chapter-write-launch'
 import { ARCH_STEP_NAMES, createDefaultArchitectureSelection, type ArchStepKey } from '../../services/architecture-step-selection'
 import { toast } from '../ui/Toast'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -37,6 +43,7 @@ export interface ArchitectureConfirmFormOptions {
     stepGuidance: Record<string, string>,
     synopsisRange?: { from: number; to: number },
     targetUnits?: number,
+    generationModelId?: string,
   ) => Promise<void>
 }
 
@@ -47,6 +54,8 @@ export function useArchitectureConfirmForm({
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
 
   // 默认：未确认的全部勾选；或使用 initialSelectedSteps 覆盖
   const [checked, setChecked] = useState<Record<ArchStepKey, boolean>>(() => {
@@ -62,6 +71,14 @@ export function useArchitectureConfirmForm({
   const [preferenceLoading, setPreferenceLoading] = useState(true)
   const [isConfirming, setIsConfirming] = useState(false)
   const [guardError, setGuardError] = useState<string | null>(null)
+  const [generationModelId, setGenerationModelId] = useState<string | null>(() => (
+    preferredGenerationModelId(models, defaultModelId)
+  ))
+
+  const generationModels = models.filter(isGenerationModel)
+  const fallbackGenerationModelId = preferredGenerationModelId(models, defaultModelId)
+  const selectedGenerationModelId = generationModelId ?? fallbackGenerationModelId
+  const modelSelectionError = generationModelError(models, selectedGenerationModelId, text)
 
   useEffect(() => {
     if (!isOpen) return
@@ -90,7 +107,9 @@ export function useArchitectureConfirmForm({
       setSynopsisTo(String(Math.min(total, next + DEFAULT_PLANNING_ACTION_CHAPTERS - 1)))
     }
     setChecked(defaults)
-  }, [confirmed, currentProject?.novelConfig.totalChapters, initialSelectedSteps, initialSynopsisRange, synopsisSource])
+    setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
+    setGuardError(null)
+  }, [confirmed, currentProject?.novelConfig.totalChapters, defaultModelId, initialSelectedSteps, initialSynopsisRange, models, synopsisSource])
 
   useEffect(() => {
     if (isOpen && !wasOpen.current) {
@@ -196,6 +215,15 @@ export function useArchitectureConfirmForm({
         return
       }
 
+      if (modelSelectionError || !selectedGenerationModelId) {
+        setGuardError(modelSelectionError ?? text(
+          '请选择一项可用于文本生成的模型。',
+          'Select a compatible generation model before starting.',
+        ))
+        return
+      }
+      const frozenGenerationModelId = selectedGenerationModelId
+
       // 范围合法性（超出总章数或起大于止）
       const resolution = resolveSynopsisRange()
       if (!resolution.ok) {
@@ -227,7 +255,7 @@ export function useArchitectureConfirmForm({
           return
         }
       }
-      await onConfirm(selectedSteps, stepGuidance, resolution.range, target)
+      await onConfirm(selectedSteps, stepGuidance, resolution.range, target, frozenGenerationModelId)
       onClose()
       const stepNames = selectedSteps.map(k => text(...ARCH_STEP_NAMES[k])).join(text('、', ', '))
       toast.info(text(`已提交：正在生成${stepNames}...`, `Submitted: generating ${stepNames}...`))
@@ -272,6 +300,11 @@ export function useArchitectureConfirmForm({
     isConfirming,
     guardError,
     totalChapters,
+    defaultModelId,
+    generationModels,
+    selectedGenerationModelId,
+    setGenerationModelId,
+    modelSelectionError,
     handleConfirm,
     handleOpenChange,
   }

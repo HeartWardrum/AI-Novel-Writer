@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BlueprintCharacterSyncOperation } from '../../../electron/repositories/blueprint-repository'
 import { useProjectStore } from '../../stores/project-store'
+import { useLLMStore } from '../../stores/llm-store'
 import { toast } from '../ui/Toast'
 import { useLocaleStore } from '../../stores/locale-store'
 import type { DirectoryGenerationCatalog } from '../../shared/generation-owner-contract'
@@ -10,6 +11,11 @@ import {
   DEFAULT_BLUEPRINT_GENERATION_COUNT,
   planBlueprintGenerationCost,
 } from '../../services/workflows/blueprint-batch-policy'
+import {
+  generationModelError,
+  isGenerationModel,
+  preferredGenerationModelId,
+} from '../../services/workflows/chapter-write-launch'
 import {
   captureProjectSession,
   isProjectSessionCurrent,
@@ -27,8 +33,8 @@ export interface DirectoryConfigProps {
   onClose: () => void
   /** 已有蓝图章节数（影响「追加」模式的默认值） */
   existingCount: number
-  /** 返回是否已启动；作者在确认环节取消时返回 false，对话框保持原样、不提示。 */
-  onConfirm: (params: DirectoryWorkflowParams) => Promise<boolean>
+  /** 返回是否已启动；作者在确认环节取消时返回 false，对话框保持原样、不提示。续跑不传 generationModelId。 */
+  onConfirm: (params: DirectoryWorkflowParams, generationModelId?: string) => Promise<boolean>
 }
 
 function requestedChapterCount(
@@ -70,6 +76,8 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
   const text = useLocaleStore(s => s.text)
   const locale = useLocaleStore(s => s.locale)
   const currentProject = useProjectStore(s => s.currentProject)
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
 
   // 范围选择
   const [rangeMode, setRangeMode] = useState<'front' | 'range' | 'full'>('front')
@@ -85,6 +93,13 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
   const [pacingGuidance, setPacingGuidance] = useState('')
   const [isConfirming, setIsConfirming] = useState(false)
   const [launchError, setLaunchError] = useState<string | null>(null)
+  const [generationModelId, setGenerationModelId] = useState<string | null>(() => (
+    preferredGenerationModelId(models, defaultModelId)
+  ))
+  const generationModels = models.filter(isGenerationModel)
+  const fallbackGenerationModelId = preferredGenerationModelId(models, defaultModelId)
+  const selectedGenerationModelId = generationModelId ?? fallbackGenerationModelId
+  const modelSelectionError = generationModelError(models, selectedGenerationModelId, text)
   const [pendingCharacterSyncs, setPendingCharacterSyncs] = useState<BlueprintCharacterSyncOperation[]>([])
   const [isRecoveryLoading, setIsRecoveryLoading] = useState(false)
   const [isRecovering, setIsRecovering] = useState(false)
@@ -100,6 +115,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
   const rangeDefaultsFor = useRef<string | null>(null)
   useEffect(() => {
     if (!isOpen) return
+    setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
     let disposed = false
     void ipc.invoke('config:get').then(config => {
       if (!disposed) setTargetUnits(String(parsePlanningTargetUnits(config.blueprintTargetUnits)))
@@ -107,7 +123,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
       if (!disposed) setLaunchError(error instanceof Error ? error.message : String(error))
     }).finally(() => { if (!disposed) setPreferenceLoading(false) })
     return () => { disposed = true; setPreferenceLoading(true) }
-  }, [isOpen])
+  }, [defaultModelId, isOpen, models])
   useEffect(() => {
     if (!isOpen || !currentProject) return
     const session = captureProjectSession(currentProject)
@@ -245,6 +261,14 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
   }
 
   const handleConfirm = async () => {
+    if (modelSelectionError || !selectedGenerationModelId) {
+      setLaunchError(modelSelectionError ?? text(
+        '请选择一项可用于文本生成的模型。',
+        'Select a compatible generation model before starting.',
+      ))
+      return
+    }
+    const frozenGenerationModelId = selectedGenerationModelId
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession) {
       toast.warning(text(
@@ -311,7 +335,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
         return
       }
       if (!isProjectSessionCurrent(projectSession)) return
-      const started = await onConfirm({ ...params, pacingGuidance: pacingGuidance || undefined })
+      const started = await onConfirm({ ...params, pacingGuidance: pacingGuidance || undefined }, frozenGenerationModelId)
       setLaunchError(null)
       if (!started) return
       onClose()
@@ -341,6 +365,7 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
     text, currentProject, total, appendStart, hasPriorAuthority, previewCost,
     rangeMode, setRangeMode, overwriteMode, setOverwriteMode, frontN, setFrontN, rangeStart, setRangeStart, rangeEnd, setRangeEnd,
     targetUnits, setTargetUnits, preferenceLoading, pacingGuidance, setPacingGuidance,
+    defaultModelId, generationModels, selectedGenerationModelId, setGenerationModelId, modelSelectionError,
     isConfirming, launchError, authorityError, authorityLoading,
     pendingCharacterSyncs, isRecoveryLoading, isRecovering, recoveryError,
     progressError: progressShown ? progressError : null,

@@ -58,6 +58,18 @@ it('同nonce不同作者输入拒绝，generic begin/execute不能绕过editor o
  await expect(f.owner.execute({handle:recovery.view.handle,invocationNonce:'伪请求',task:{purpose:'editor-ai-refine',output:'visible-text',messages:[]}})).rejects.toThrow()
  expect(f.spy).not.toHaveBeenCalled()
 })
+it('局部重写冻结作者改写要求，并写入实际提示词',async()=>{
+ const rewriteInput={action:'rewrite' as const,documentText:input.documentText,from:input.from,to:input.to,selectedText:input.selectedText,editInstruction:'  把冲突写得更激烈，保留人名。  '}
+ const f=fixture(),recovery=f.owner.beginEditorInline({input:rewriteInput,modelId:'synthetic',uiActionNonce:'作者局部重写'})
+ expect(recovery.context).toMatchObject({action:'rewrite',editInstruction:'把冲突写得更激烈，保留人名。',selectedText:input.selectedText})
+ expect(()=>f.owner.beginEditorInline({input:{...rewriteInput,editInstruction:''},modelId:'synthetic',uiActionNonce:'空要求'})).toThrow()
+ expect(()=>f.owner.beginEditorInline({input:{action:'refine',documentText:input.documentText,from:input.from,to:input.to,selectedText:input.selectedText,editInstruction:'多余'},modelId:'synthetic',uiActionNonce:'润色带意见'})).toThrow()
+ const receipt=await f.owner.executeEditorInline(recovery.view.handle)
+ expect(receipt.outcome.status).toBe('completed')
+ expect(JSON.stringify(f.spy.mock.calls[0]![0])).toContain('按以下要求局部重写选中正文')
+ expect(JSON.stringify(f.spy.mock.calls[0]![0])).toContain('把冲突写得更激烈，保留人名。')
+ expect(JSON.stringify(f.spy.mock.calls[0]![0])).toContain(input.selectedText)
+})
 it.each(['stop','unknown'] as const)('%s并发只发一次，重开改变模板删除模型仍读原候选',async mode=>{
  let release!:()=>void;const pending=new Promise<void>(resolve=>{release=resolve})
  const f=fixture(async(_r,o)=>{await pending;o.onVisible({kind:'delta',text:'林岚停下脚步。'});if(mode==='unknown')throw new Error('合成网络中断');return {finishReason:'stop',usage:null}})

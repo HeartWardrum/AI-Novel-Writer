@@ -15,7 +15,7 @@ const numberValue = (value: string): number | '' => value === '' ? '' : Number(v
 /** AI 生成蓝图：范围、每章目标、已有蓝图的处理方式与节奏指导。表单逻辑在 useDirectoryConfigForm。 */
 export default function GenerateBlueprintsDialog(props: DirectoryConfigProps) {
   const form = useDirectoryConfigForm(props)
-  const ids = { targetUnits: useId(), pacing: useId(), range: useId() }
+  const ids = { targetUnits: useId(), pacing: useId(), range: useId(), model: useId() }
   if (!form) return null
   const { text, total, appendStart, hasPriorAuthority } = form
   const busy = form.isConfirming || form.isRecovering
@@ -23,6 +23,7 @@ export default function GenerateBlueprintsDialog(props: DirectoryConfigProps) {
   const showExisting = (props.existingCount > 0 || hasPriorAuthority) && form.rangeMode !== 'range'
   const overwrite = showExisting && form.overwriteMode === 'full'
   const zh = resolveWritingLanguage(form.currentProject.novelConfig.writingLanguage) === 'zh-CN'
+  const modelBlocked = Boolean(form.modelSelectionError) || form.generationModels.length === 0
 
   const description = props.existingCount > 0
     ? text(`按情节大纲为章节生成蓝图。已有 ${props.existingCount} 章蓝图，默认保留不动。`, `Generate chapter blueprints from the plot outline. ${props.existingCount} existing ${pluralEn(props.existingCount, 'blueprint')} ${pluralEn(props.existingCount, 'is', 'are')} kept by default.`)
@@ -42,7 +43,7 @@ export default function GenerateBlueprintsDialog(props: DirectoryConfigProps) {
           <Button variant="secondary" disabled={busy} onClick={props.onClose}>{text('取消', 'Cancel')}</Button>
           <Button
             variant="primary"
-            disabled={busy || form.preferenceLoading || form.authorityLoading || Boolean(form.authorityError)}
+            disabled={busy || form.preferenceLoading || form.authorityLoading || Boolean(form.authorityError) || modelBlocked}
             aria-busy={form.isConfirming || undefined}
             onClick={() => void form.handleConfirm()}
           >
@@ -53,6 +54,25 @@ export default function GenerateBlueprintsDialog(props: DirectoryConfigProps) {
       )}
     >
       <div className="stage-bp-dialog-body">
+        <div className="pi-field">
+          <label htmlFor={ids.model}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
+          <select
+            id={ids.model}
+            className="pi-input"
+            value={form.selectedGenerationModelId ?? ''}
+            disabled={busy || form.generationModels.length === 0}
+            onChange={event => form.setGenerationModelId(event.target.value || null)}
+            aria-label={text('本次模型', 'Model for this run')}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {form.generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === form.defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        {form.modelSelectionError && <p className="stage-dialog-error" role="alert">{form.modelSelectionError}</p>}
         {form.progressError && <p className="stage-dialog-error" role="alert">{form.progressError}</p>}
         {form.diagnostics.length > 0 && (
           <Notice tone="warn" title={text('旧的生成记录不能续接', 'Previous generation runs cannot continue')}>

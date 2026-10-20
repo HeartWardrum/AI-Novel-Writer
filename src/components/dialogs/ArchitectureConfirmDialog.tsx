@@ -28,7 +28,8 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
   const {
     config, checked, toggleStep, setAll, selectedSteps, noneSelected, stepGuidance, showGuidance, setShowGuidance,
     synopsisFrom, setSynopsisFrom, synopsisTo, setSynopsisTo, targetUnits, setTargetUnits, preferenceLoading,
-    isConfirming, guardError, totalChapters, handleConfirm, handleOpenChange,
+    isConfirming, guardError, totalChapters, defaultModelId, generationModels, selectedGenerationModelId,
+    setGenerationModelId, modelSelectionError, handleConfirm, handleOpenChange,
   } = form
 
   if (!config) return null
@@ -36,6 +37,7 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
     .filter(Boolean)
     .join(' · ')
   const audience = text(config.targetAudience, AUDIENCE_EN[config.targetAudience] ?? config.targetAudience)
+  const modelBlocked = Boolean(modelSelectionError) || generationModels.length === 0
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -51,6 +53,34 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
         </DialogHeader>
 
         <div className="px-5 py-3 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }} htmlFor="arch-confirm-model">
+              {text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em>
+            </label>
+            <select
+              id="arch-confirm-model"
+              className="w-full rounded-md px-2 py-1.5 text-xs outline-none"
+              style={{
+                color: 'var(--color-text)',
+                backgroundColor: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+              }}
+              value={selectedGenerationModelId ?? ''}
+              disabled={isConfirming || generationModels.length === 0}
+              onChange={event => setGenerationModelId(event.target.value || null)}
+              aria-label={text('本次模型', 'Model for this run')}
+            >
+              <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+              {generationModels.map(model => (
+                <option key={model.id} value={model.id}>
+                  {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+                </option>
+              ))}
+            </select>
+            {modelSelectionError && (
+              <p className="text-xs m-0 text-[var(--color-warning-text)]">{modelSelectionError}</p>
+            )}
+          </div>
           {/* 配置预览 */}
           <div
             className="rounded-lg p-3 space-y-1.5 text-xs"
@@ -263,7 +293,7 @@ export default function ArchitectureConfirmDialog(props: ArchitectureConfirmForm
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isConfirming}>{text('取消', 'Cancel')}</Button>
-          <Button variant="default" onClick={handleConfirm} disabled={noneSelected || isConfirming || form.synopsisRangeIssue !== null || (checked.synopsis && preferenceLoading)}>
+          <Button variant="default" onClick={handleConfirm} disabled={noneSelected || isConfirming || form.synopsisRangeIssue !== null || modelBlocked || (checked.synopsis && preferenceLoading)}>
             <Wand2 size={13} />
             {isConfirming ? text('校验中...', 'Validating...') : text(`确认生成（${selectedSteps.length}/4）`, `Generate (${selectedSteps.length}/4)`)}
           </Button>

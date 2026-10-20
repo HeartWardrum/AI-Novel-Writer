@@ -11,8 +11,14 @@ import {
 import { resolveWritingLanguage, type WritingLanguage } from '../../../shared/writing-language'
 import { sameProjectPathKey } from '../../../shared/project-session-context'
 import type { GeneratableField } from '../../../services/workflows/commands/generate-field.command'
+import {
+  generationModelError,
+  isGenerationModel,
+  preferredGenerationModelId,
+} from '../../../services/workflows/chapter-write-launch'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useLayoutStore } from '../../../stores/layout-store'
+import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { missingSetup, type SetupField } from '../../../stores/navigation/stage-progress'
@@ -79,9 +85,24 @@ function DisabledReason({ id, reason }: { id: string; reason: string | null }) {
 
 function AiButton({ field, label, form, disabledReason }: { field: GeneratableField; label: string; form: Form; disabledReason: string | null }) {
   const text = useLocaleStore(s => s.text)
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
   const reasonId = useId()
+  const modelFieldId = useId()
+  const [open, setOpen] = useState(false)
+  const [generationModelId, setGenerationModelId] = useState<string | null>(null)
   const busy = form.generatingField === field
   const reason = disabledReason ?? (form.generatingField !== null && !busy ? text('正在生成另一项，完成后再试', 'Another field is generating. Try again when it finishes') : null)
+  const generationModels = models.filter(isGenerationModel)
+  const selectedModelId = generationModelId ?? preferredGenerationModelId(models, defaultModelId)
+  const modelError = generationModelError(models, selectedModelId, text)
+  const modelBlocked = Boolean(modelError) || generationModels.length === 0
+
+  const openDialog = () => {
+    setGenerationModelId(preferredGenerationModelId(models, defaultModelId))
+    setOpen(true)
+  }
+
   return (
     <>
       <Button
@@ -91,12 +112,55 @@ function AiButton({ field, label, form, disabledReason }: { field: GeneratableFi
         disabled={reason !== null || busy}
         aria-describedby={reason ? reasonId : undefined}
         aria-label={text(`AI 生成「${label}」`, `Generate “${label}” with AI`)}
-        onClick={() => void form.generateField(field)}
+        onClick={openDialog}
       >
         {busy ? <LoaderCircle size={13} className="stage-update-spin" aria-hidden="true" /> : <Sparkles size={13} aria-hidden="true" />}
         {busy ? text('生成中…', 'Generating…') : text('AI 生成', 'Generate')}
       </Button>
       <DisabledReason id={reasonId} reason={reason} />
+      <InkDialog
+        open={open}
+        onOpenChange={next => { if (!next) setOpen(false) }}
+        title={text(`AI 生成「${label}」`, `Generate “${label}” with AI`)}
+        description={text('选好本次模型后开始生成。只改这一项，其它设定不动。', 'Choose a model for this run, then generate. Only this field changes.')}
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setOpen(false)}>{text('取消', 'Cancel')}</Button>
+            <Button
+              variant="primary"
+              disabled={modelBlocked}
+              onClick={() => {
+                if (!selectedModelId || modelBlocked) return
+                setOpen(false)
+                void form.generateField(field, selectedModelId)
+              }}
+            >
+              <Sparkles size={14} aria-hidden />
+              {text('开始生成', 'Generate')}
+            </Button>
+          </>
+        )}
+      >
+        <div className="pi-field">
+          <label htmlFor={modelFieldId}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
+          <select
+            id={modelFieldId}
+            className="pi-input"
+            value={selectedModelId ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => setGenerationModelId(event.target.value || null)}
+            aria-label={text('本次模型', 'Model for this run')}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        {modelError && <p className="stage-setup-error" role="alert">{modelError}</p>}
+      </InkDialog>
     </>
   )
 }
@@ -250,14 +314,18 @@ function SetupSession({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
   const form = useNovelConfigForm(projectKey)
   const modelMissing = useModelMissing()
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
   const filling = useWorkflowStore(s => s.activeRuns.some(run => run.type === 'config_generation' && sameProjectPathKey(run.projectPath, projectKey)))
   const [open, setOpen] = useState<ReadonlySet<PanelId>>(() => new Set())
-  const [expandFields, setExpandFields] = useState<string[] | null>(null)
+  const [fillDialog, setFillDialog] = useState<{ fields: string[] } | null>(null)
+  const [fillModelId, setFillModelId] = useState<string | null>(null)
   const [left, setLeft] = useState<ReadonlySet<SetupField>>(() => new Set())
   const outlineId = useId()
   const hintId = useId()
   const lengthId = useId()
   const fillReasonId = useId()
+  const fillModelFieldId = useId()
 
   const { config } = form
   if (!config) {
@@ -290,16 +358,26 @@ function SetupSession({ projectKey }: { projectKey: string }) {
         `${missing.length} left: ${missing.map(field => REQUIRED_NAMES[field][1]).join(', ')}`)
   const aiReason = modelMissing ? text('先在设置里添加 AI 模型', 'Add an AI model in Settings first') : null
   const fillReason = aiReason ?? (config.coreOutline.trim() ? null : text('先写核心大纲，AI 按它补全其余设定', 'Write the core outline first; AI fills in the rest from it'))
+  const generationModels = models.filter(isGenerationModel)
+  const selectedFillModelId = fillModelId ?? preferredGenerationModelId(models, defaultModelId)
+  const fillModelError = generationModelError(models, selectedFillModelId, text)
+  const fillModelBlocked = Boolean(fillModelError) || generationModels.length === 0
+  const expandFields = fillDialog?.fields ?? null
+  const hasExpandFields = Boolean(expandFields && expandFields.length > 0)
 
-  const startFill = () => {
+  const startFill = (generationModelId: string) => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session) return
-    if (startConfigGeneration({ idea: config.coreOutline, projectSession: session, onGenerated: form.applyGeneratedTo(session) })) setExpandFields(null)
+    if (startConfigGeneration({
+      idea: config.coreOutline,
+      projectSession: session,
+      onGenerated: form.applyGeneratedTo(session),
+      generationModelId,
+    })) setFillDialog(null)
   }
   const requestFill = () => {
-    const fields = configFieldsToExpand(config, text)
-    if (fields.length > 0) setExpandFields(fields)
-    else startFill()
+    setFillModelId(preferredGenerationModelId(models, defaultModelId))
+    setFillDialog({ fields: configFieldsToExpand(config, text) })
   }
   const goNext = async () => {
     if (form.dirty) {
@@ -438,20 +516,51 @@ function SetupSession({ projectKey }: { projectKey: string }) {
       </footer>
 
       <InkDialog
-        open={expandFields !== null}
-        onOpenChange={next => { if (!next) setExpandFields(null) }}
-        title={text('扩写已有的设定？', 'Expand what you have written?')}
-        description={text('下面这些已经有你写的内容。AI 会保留原文，只在后面补充：', 'These already have your writing. AI keeps it and only adds to it:')}
+        open={fillDialog !== null}
+        onOpenChange={next => { if (!next) setFillDialog(null) }}
+        title={hasExpandFields
+          ? text('扩写已有的设定？', 'Expand what you have written?')
+          : text('AI 补全其余设定', 'Fill the rest with AI')}
+        description={hasExpandFields
+          ? text('下面这些已经有你写的内容。AI 会保留原文，只在后面补充：', 'These already have your writing. AI keeps it and only adds to it:')
+          : text('按核心大纲补全其余设定。选好本次模型后开始。', 'Fill the remaining setup from the core outline. Choose a model for this run, then start.')}
         footer={(
           <>
-            <Button variant="secondary" onClick={() => setExpandFields(null)}>{text('取消', 'Cancel')}</Button>
-            <Button variant="primary" onClick={startFill}>{text('继续扩写', 'Expand')}</Button>
+            <Button variant="secondary" onClick={() => setFillDialog(null)}>{text('取消', 'Cancel')}</Button>
+            <Button
+              variant="primary"
+              disabled={fillModelBlocked || !selectedFillModelId}
+              onClick={() => { if (selectedFillModelId) startFill(selectedFillModelId) }}
+            >
+              {hasExpandFields ? text('继续扩写', 'Expand') : text('开始补全', 'Fill in')}
+            </Button>
           </>
         )}
       >
-        <ul className="stage-setup-expand-list">
-          {expandFields?.map(field => <li key={field}>{field}</li>)}
-        </ul>
+        <div className="pi-field">
+          <label htmlFor={fillModelFieldId}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
+          <select
+            id={fillModelFieldId}
+            className="pi-input"
+            value={selectedFillModelId ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => setFillModelId(event.target.value || null)}
+            aria-label={text('本次模型', 'Model for this run')}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        {fillModelError && <p className="stage-setup-error" role="alert">{fillModelError}</p>}
+        {hasExpandFields && (
+          <ul className="stage-setup-expand-list">
+            {expandFields?.map(field => <li key={field}>{field}</li>)}
+          </ul>
+        )}
       </InkDialog>
     </div>
   )

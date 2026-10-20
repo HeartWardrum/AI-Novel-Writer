@@ -6,6 +6,7 @@ import { EditorState, type Extension } from '@codemirror/state'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
 import { Sparkles, Bold, Check } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { InkDialog } from '../stage/InkDialog'
 import { paragraphIndent } from './paragraph-indent'
 import { proseTab } from './prose-tab'
 import { useThemeStore } from '../../stores/theme-store'
@@ -13,6 +14,8 @@ import type { MainGenerationRunHandle } from '../../services/generation/generati
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { useLLMStore } from '../../stores/llm-store'
 import type { GenerationReasoningStage } from '../../shared/reasoning-types'
+import type { EditorInlineAction, EditorInlineInput } from '../../shared/editor-inline-generation'
+import { isGenerationModel, preferredGenerationModelId } from '../../services/workflows/chapter-write-launch'
 import { countDraftUnits } from '../../shared/draft-units'
 import { useLocaleStore } from '../../stores/locale-store'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
@@ -38,7 +41,7 @@ export type CodeMirrorEditorProps = {
 }
 
 type EditorAIAction = {
-  key: 'refine' | 'expand' | 'continue' | 'dialogue'
+  key: Exclude<EditorInlineAction, 'rewrite'>
   label: readonly [string, string]
   prompt: readonly [string, string]
   reasoningStage: GenerationReasoningStage
@@ -50,6 +53,11 @@ const AI_ACTIONS = [
   { key: 'continue', label: ['续写', 'Continue'], prompt: ['根据现有因果和人物动机，自然续写接下来的情节。', 'Continue naturally from the established causality and character motivation.'], reasoningStage: 'drafting' },
   { key: 'dialogue', label: ['改成对话', 'To dialogue'], prompt: ['将这部分改写为有区分度、能推动冲突的自然对话。', 'Rewrite this passage as distinct, natural dialogue that advances the conflict.'], reasoningStage: 'drafting' },
 ] satisfies readonly EditorAIAction[]
+
+const REWRITE_ACTION = {
+  key: 'rewrite' as const,
+  label: ['局部重写', 'Rewrite'] as const,
+}
 
 export default function CodeMirrorEditor({
   content,
@@ -69,6 +77,9 @@ export default function CodeMirrorEditor({
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
   const uiText = useLocaleStore(s => s.text)
   const uiLocale = useLocaleStore(s => s.locale)
+  const models = useLLMStore(s => s.models)
+  const defaultModelId = useLLMStore(s => s.defaultModelId)
+  const generationModels = models.filter(isGenerationModel)
   const editorRef = useRef<ReactCodeMirrorRef>(null)
 
   // 避免状态回路
@@ -129,13 +140,21 @@ export default function CodeMirrorEditor({
   const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
   const [loadingDots, setLoadingDots] = useState('.')
   const [selectionRange, setSelectionRange] = useState<{ from: number, to: number } | null>(null)
+  const [rewriteAsk, setRewriteAsk] = useState(false)
+  const [rewritePrompt, setRewritePrompt] = useState('')
+  const [rewriteModelId, setRewriteModelId] = useState<string | null>(null)
+  const rewriteAskRef = useRef(false)
+  useLayoutEffect(() => { rewriteAskRef.current = rewriteAsk }, [rewriteAsk])
+  const selectedRewriteModelId = rewriteModelId ?? preferredGenerationModelId(models, defaultModelId)
   const aiRequestSequenceRef = useRef(0)
   const aiTargetRef = useRef<{
     requestSequence: number
+    action: EditorInlineAction
     from: number
     to: number
     selectedText: string
     documentText: string
+    editInstruction?: string
     filePath?: string
     sessionKey: string
   } | null>(null)
@@ -167,7 +186,10 @@ export default function CodeMirrorEditor({
       const applicable = latest?.status === 'completed' && latest.compositionEligible === true && recovery.view.status !== 'cancelled' && recovery.sourceStatus === 'current'
       setAiError(applicable ? null : uiText('恢复的候选尚不可应用，可复制或继续原运行', 'The recovered candidate cannot be applied yet; copy it or continue the original run.'))
       setCanResumeAI(recovery.sourceStatus === 'current' && recovery.view.status !== 'cancelled' && recovery.view.ledger?.physicalRequests === 0 && candidates.length === 0)
-      setActiveAIAction(uiText(...AI_ACTIONS.find(action => action.key === target.action)!.label))
+      const actionLabel = target.action === 'rewrite'
+        ? REWRITE_ACTION.label
+        : AI_ACTIONS.find(action => action.key === target.action)!.label
+      setActiveAIAction(uiText(actionLabel[0], actionLabel[1]))
       const view = editorRef.current?.view
       const from = Math.min(target.from, view?.state.doc.length ?? 0)
       setSelectionRange({ from, to: Math.min(target.to, view?.state.doc.length ?? 0) })
@@ -206,11 +228,12 @@ export default function CodeMirrorEditor({
     if (v.selectionSet || v.docChanged || v.geometryChanged) {
       const sel = v.state.selection.main
       if (sel.empty || sel.to - sel.from < 1) {
-        if (aiResult === null) { setBubbleOpen(false); setSelectionRange(null) }
+        // 局部重写对话框打开时保留冻结选区，避免焦点离开正文后丢掉目标。
+        if (aiResult === null && !rewriteAskRef.current) { setBubbleOpen(false); setSelectionRange(null) }
       } else {
         setSelectionRange({ from: sel.from, to: sel.to })
         // 交由下方的 useEffect 进行精准防越界座标计算与位置同步
-        if (!aiResult) {
+        if (!aiResult && !rewriteAskRef.current) {
           setBubbleOpen(true)
         }
       }
@@ -389,24 +412,55 @@ export default function CodeMirrorEditor({
     return exts
   }, [mode, stablePaperHead, uiLocale, indentParagraphs])
 
-  // AI 菜单处理（流式调用，实时显示生成内容）
-  const handleAIAction = async (action: EditorAIAction) => {
+  const openRewriteDialog = () => {
+    if (!selectionRange || !editorRef.current?.view || !editable) return
+    setRewritePrompt('')
+    setRewriteModelId(preferredGenerationModelId(models, defaultModelId))
+    setRewriteAsk(true)
+    setBubbleOpen(false)
+  }
+
+  // AI 菜单处理：结果先在选区浮层预览，确认后才替换正文。
+  const handleAIAction = async (
+    action: { key: EditorInlineAction; label: readonly [string, string] },
+    options: { editInstruction?: string; modelId?: string } = {},
+  ) => {
     let requestSequence: number | null = null
     try {
       if (!selectionRange || !editorRef.current?.view || !editable) return
       const session = getActiveProjectSessionContext()
       if (!session) throw new Error('EDITOR_INLINE_PROJECT_REQUIRED')
       const view = editorRef.current.view
+      const editInstruction = options.editInstruction?.trim()
+      if (action.key === 'rewrite' && !editInstruction) return
+      const modelId = options.modelId?.trim()
+        || useLLMStore.getState().defaultModelId
+        || ''
+      if (action.key === 'rewrite' && !modelId) return
       requestSequence = ++aiRequestSequenceRef.current
-      const input = { action: action.key, from: selectionRange.from, to: selectionRange.to,
-        selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to), documentText: view.state.doc.toString() }
+      const input: EditorInlineInput = action.key === 'rewrite'
+        ? {
+            action: 'rewrite',
+            from: selectionRange.from,
+            to: selectionRange.to,
+            selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to),
+            documentText: view.state.doc.toString(),
+            editInstruction: editInstruction!,
+          }
+        : {
+            action: action.key,
+            from: selectionRange.from,
+            to: selectionRange.to,
+            selectedText: view.state.sliceDoc(selectionRange.from, selectionRange.to),
+            documentText: view.state.doc.toString(),
+          }
       aiTargetRef.current = { ...input, requestSequence, filePath, sessionKey: JSON.stringify(session) }
       inlineRef.current?.detach()
       const client = createEditorInlineGeneration(session)
       inlineRef.current = client
       aiCandidateRef.current = null
-      setActiveAIAction(uiText(...action.label)); setAiResult(''); setAiError(null); setCanResumeAI(false)
-      const recovery = await client.open({ input, modelId: useLLMStore.getState().defaultModelId ?? '', uiActionNonce: crypto.randomUUID() })
+      setActiveAIAction(uiText(...action.label)); setAiResult(''); setAiError(null); setCanResumeAI(false); setBubbleOpen(true)
+      const recovery = await client.open({ input, modelId, uiActionNonce: crypto.randomUUID() })
       if (requestSequence !== aiRequestSequenceRef.current) return
       onGenerationHandle?.(recovery.view.handle)
       const receipt = await client.execute()
@@ -618,9 +672,12 @@ export default function CodeMirrorEditor({
                   <span className="cm-selbar-sep" aria-hidden="true" />
                 </>
               )}
-              {AI_ACTIONS.map((action, index) => (
-                <Button key={action.key} variant="text" size="sm" className="cm-selbar-tool" onClick={() => handleAIAction(action)}>
-                  {index === 0 && <Sparkles size={13} aria-hidden="true" />}
+              <Button key={REWRITE_ACTION.key} variant="text" size="sm" className="cm-selbar-tool" onClick={openRewriteDialog}>
+                <Sparkles size={13} aria-hidden="true" />
+                {uiText(...REWRITE_ACTION.label)}
+              </Button>
+              {AI_ACTIONS.map((action) => (
+                <Button key={action.key} variant="text" size="sm" className="cm-selbar-tool" onClick={() => void handleAIAction(action)}>
                   {uiText(...action.label)}
                 </Button>
               ))}
@@ -628,6 +685,77 @@ export default function CodeMirrorEditor({
           )}
         </div>
       )}
+      <InkDialog
+        open={rewriteAsk}
+        onOpenChange={open => {
+          if (!open) {
+            setRewriteAsk(false)
+            setRewritePrompt('')
+            setRewriteModelId(null)
+            if (selectionRange && aiResult === null) setBubbleOpen(true)
+          }
+        }}
+        title={uiText('局部重写', 'Rewrite selection')}
+        description={uiText(
+          '只改选中的这段。写明你要怎么改，AI 按你的要求重写；结果先预览，确认后才替换正文。',
+          'Only the selected passage is rewritten. Describe what you want changed; AI rewrites to that request. Preview first, then replace.',
+        )}
+        keepOnOutsideClick
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => {
+              setRewriteAsk(false)
+              setRewritePrompt('')
+              setRewriteModelId(null)
+              if (selectionRange && aiResult === null) setBubbleOpen(true)
+            }}>{uiText('取消', 'Cancel')}</Button>
+            <Button
+              variant="primary"
+              disabled={!rewritePrompt.trim() || !selectedRewriteModelId || generationModels.length === 0}
+              onClick={() => {
+                const instruction = rewritePrompt.trim()
+                if (!instruction || !selectedRewriteModelId) return
+                setRewriteAsk(false)
+                setRewritePrompt('')
+                setRewriteModelId(null)
+                void handleAIAction(REWRITE_ACTION, { editInstruction: instruction, modelId: selectedRewriteModelId })
+              }}
+            >{uiText('开始重写', 'Start rewrite')}</Button>
+          </>
+        )}
+      >
+        <label className="pi-field">
+          <span>{uiText('本次模型', 'Model for this run')} <em>{uiText('只用于这一次', 'This run only')}</em></span>
+          <select
+            className="pi-input"
+            aria-label={uiText('本次模型', 'Model for this run')}
+            value={selectedRewriteModelId ?? ''}
+            disabled={generationModels.length === 0}
+            onChange={event => setRewriteModelId(event.target.value || null)}
+          >
+            <option value="" disabled>{uiText('请选择可用生成模型', 'Select a generation model')}</option>
+            {generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === defaultModelId ? uiText('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="pi-field">
+          <span>{uiText('改写要求', 'Rewrite guidance')} <em>{uiText('必填', 'Required')}</em></span>
+          <textarea
+            className="pi-input stage-ch-textarea"
+            rows={4}
+            value={rewritePrompt}
+            aria-label={uiText('改写要求', 'Rewrite guidance')}
+            placeholder={uiText(
+              '例如：把这段冲突写得更激烈，保留人名和最终结果；对白改得更口语。',
+              'For example: intensify the conflict, keep the names and outcome; make the dialogue more colloquial.',
+            )}
+            onChange={event => setRewritePrompt(event.target.value)}
+          />
+        </label>
+      </InkDialog>
     </div>
   )
 }

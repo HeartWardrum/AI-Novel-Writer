@@ -1,5 +1,10 @@
 import type { NovelConfig } from '../../shared/ipc-channels'
 import { createConfigGenerationWorkflow } from '../../services/workflows/architecture-workflow'
+import {
+  availableGenerationModelId,
+  generationModelError,
+  preferredGenerationModelId,
+} from '../../services/workflows/chapter-write-launch'
 import { useLLMStore } from '../../stores/llm-store'
 import { useLocaleStore } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
@@ -23,18 +28,23 @@ export function configFieldsToExpand(config: Partial<NovelConfig> | undefined, t
 }
 
 /**
- * 按创作脑洞与当前规模在后台启动 AI 填充配置。没有默认模型、与正在运行的任务冲突时不启动，返回 false。
+ * 按创作脑洞与当前规模在后台启动 AI 填充配置。没有可用生成模型、与正在运行的任务冲突时不启动，返回 false。
  * 设定页的 AI 补全与单项生成用它。
  */
-export function startConfigGeneration({ idea, projectSession, onGenerated }: {
+export function startConfigGeneration({ idea, projectSession, onGenerated, generationModelId }: {
   idea: string
   projectSession: ProjectSessionContext
   onGenerated: (config: Partial<NovelConfig>) => void
+  generationModelId?: string
 }): boolean {
   const text = useLocaleStore.getState().text
   const { addLog, startWorkflow } = useWorkflowStore.getState()
-  if (!useLLMStore.getState().defaultModelId) {
-    addLog('error', text('请先在设置中配置 AI 模型', 'Configure an AI model in Settings first.'))
+  const { models, defaultModelId } = useLLMStore.getState()
+  const selectedModelId = availableGenerationModelId(models, generationModelId)
+    ?? preferredGenerationModelId(models, defaultModelId)
+  const modelError = generationModelError(models, selectedModelId, text)
+  if (modelError || !selectedModelId) {
+    addLog('error', modelError ?? text('请先在设置中配置 AI 模型', 'Configure an AI model in Settings first.'))
     return false
   }
   const config = useProjectStore.getState().currentProject?.novelConfig
@@ -47,6 +57,7 @@ export function startConfigGeneration({ idea, projectSession, onGenerated }: {
     totalChapters,
     wordsPerChapter,
     onGenerated,
+    generationModelId: selectedModelId,
   })
   const conflict = useWorkflowStore.getState().getResourceConflict(workflow)
   if (conflict) {

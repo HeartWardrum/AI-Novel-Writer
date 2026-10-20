@@ -75,6 +75,8 @@ export interface ConfigGenerationWorkflowParams {
   totalChapters: number
   wordsPerChapter: number
   onGenerated: (config: Partial<NovelConfig>) => void
+  /** 本次生成选用的模型；缺省则工作流运行时回退默认模型。 */
+  generationModelId?: string
 }
 
 // ==========================================
@@ -245,12 +247,14 @@ export function createConfigGenerationWorkflow(params: ConfigGenerationWorkflowP
     throw new Error(text('当前项目已切换，无法启动配置生成', 'The project changed, so configuration generation cannot start.'))
   }
   const projectSession = Object.freeze({ ...params.projectSession })
+  const generationModelId = params.generationModelId?.trim() || undefined
   return {
     type: 'config_generation',
     title: text('AI 生成小说配置', 'Generate novel configuration with AI'),
     projectPath: params.projectPath,
     projectSession,
     resourceKeys: [workflowResourceKey('novel-config')],
+    ...(generationModelId ? { generationModelId } : {}),
     steps: [
       {
         name: text('智能分析并填充配置', 'Analyze and fill the configuration'),

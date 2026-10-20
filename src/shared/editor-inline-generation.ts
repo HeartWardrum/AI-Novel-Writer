@@ -2,12 +2,16 @@ import type { MainGenerationRunHandle, MainGenerationRunView, MainGenerationExec
 import type { PromptTemplate } from '../services/builtin-prompt-templates'
 import type { WritingLanguage } from './writing-language'
 
+export type EditorInlineAction = 'refine' | 'expand' | 'continue' | 'dialogue' | 'rewrite'
+
 export interface EditorInlineInput {
-  action: 'refine' | 'expand' | 'continue' | 'dialogue'
+  action: EditorInlineAction
   documentText: string
   from: number
   to: number
   selectedText: string
+  /** Author rewrite guidance. Required for `rewrite`; omitted for preset actions. */
+  editInstruction?: string
 }
 export interface EditorInlineContext extends EditorInlineInput {
   kind: 'author-draft'

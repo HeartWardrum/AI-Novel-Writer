@@ -64,12 +64,12 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   }
 
   // 确认框不叠在生成对话框上：先收起对话框再问。作者取消时对话框原样回来，不当作错误；启动失败时回来并写明原因。
-  const generate = async (params: DirectoryWorkflowParams) => {
+  const generate = async (params: DirectoryWorkflowParams, generationModelId?: string) => {
     setGenerateOpen(false)
     try {
       const started = params.mode === 'full' && count > 0 && !(await confirmWith('overwrite'))
         ? false
-        : await plan.generateBlueprints(params, message => confirmWith('warning', message))
+        : await plan.generateBlueprints(params, message => confirmWith('warning', message), generationModelId)
       if (!started) setGenerateOpen(true)
       return started
     } catch (error) {

@@ -483,6 +483,7 @@ function ArchFileViewerSession({
     stepGuidance: Record<string, string>,
     synopsisRange?: { from: number; to: number },
     targetUnits?: number,
+    generationModelId?: string,
   ) => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) {
@@ -495,7 +496,7 @@ function ArchFileViewerSession({
       stepGuidance,
       synopsisRange,
       targetUnits,
-    }, projectSession)
+    }, projectSession, generationModelId ? { generationModelId } : {})
   }
 
   const handleOpenDialog = async () => {

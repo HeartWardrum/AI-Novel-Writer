@@ -17,9 +17,14 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
   async function validate(value: EditorInlineRecovery, expected?: MainGenerationRunHandle) {
     if (value.view.handle.projectId !== session.projectId || !hasEpoch(value.view.handle) || expected && identity(expected) !== identity(value.view.handle)) throw new Error('EDITOR_INLINE_IDENTITY_MISMATCH')
     const input = value.context
-    if (!['refine', 'expand', 'continue', 'dialogue'].includes(input.action) || input.kind !== 'author-draft' || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to)
+    if (!['refine', 'expand', 'continue', 'dialogue', 'rewrite'].includes(input.action) || input.kind !== 'author-draft' || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to)
       || input.from < 0 || input.to <= input.from || input.to > input.documentText.length
       || input.documentText.slice(input.from, input.to) !== input.selectedText) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
+    if (input.action === 'rewrite') {
+      if (typeof input.editInstruction !== 'string' || !input.editInstruction.trim()) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
+    } else if (input.editInstruction !== undefined) {
+      throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
+    }
     const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))
     const hash = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
     if (hash !== input.documentHash) throw new Error('EDITOR_INLINE_CONTEXT_INVALID')
@@ -48,7 +53,12 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
           ? await ipc.invokeWithProjectSession(session, 'editor-inline:read-recovery', request)
           : await ipc.invokeWithProjectSession(session, 'editor-inline:begin', request)
         recovery = await validate(value, 'handle' in request ? request.handle : undefined)
-        if ('input' in request && (['action', 'documentText', 'from', 'to', 'selectedText'] as const).some(key => request.input[key] !== recovery!.context[key])) throw new Error('EDITOR_INLINE_CONTEXT_MISMATCH')
+        if ('input' in request) {
+          const keys = request.input.action === 'rewrite'
+            ? (['action', 'documentText', 'from', 'to', 'selectedText', 'editInstruction'] as const)
+            : (['action', 'documentText', 'from', 'to', 'selectedText'] as const)
+          if (keys.some(key => request.input[key] !== recovery!.context[key])) throw new Error('EDITOR_INLINE_CONTEXT_MISMATCH')
+        }
         if (cancelled) { await cancelKnown(); throw new Error('EDITOR_INLINE_CANCELLED') }
         if (detached) throw new Error('EDITOR_INLINE_DETACHED')
         return recovery

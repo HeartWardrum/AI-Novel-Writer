@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
 import { ARCH_STEP_NAMES } from '../../../services/architecture-step-selection'
 import { resolveWritingLanguage } from '../../../shared/writing-language'
@@ -15,11 +16,13 @@ import { pluralEn } from '../../../shared/plural-en'
 export default function ArchitectureGenerateDialog(props: ArchitectureConfirmFormOptions) {
   const text = useLocaleStore(s => s.text)
   const form = useArchitectureConfirmForm(props)
+  const modelFieldId = useId()
   const { config, checked, selectedSteps, totalChapters } = form
   if (!config) return null
   const allChecked = selectedSteps.length === SECTION_ORDER.length
   const unit = resolveWritingLanguage(config.writingLanguage) === 'zh-CN' ? text('字', 'characters') : text('词', 'words')
   const overwritingCast = form.stepMark('characters') === 'overwrite'
+  const modelBlocked = Boolean(form.modelSelectionError) || form.generationModels.length === 0
 
   return (
     <InkDialog
@@ -34,7 +37,7 @@ export default function ArchitectureGenerateDialog(props: ArchitectureConfirmFor
           <Button
             variant="primary"
             onClick={() => { void form.handleConfirm() }}
-            disabled={form.noneSelected || form.isConfirming || form.synopsisRangeIssue !== null || (checked.synopsis && form.preferenceLoading)}
+            disabled={form.noneSelected || form.isConfirming || form.synopsisRangeIssue !== null || modelBlocked || (checked.synopsis && form.preferenceLoading)}
           >
             <Sparkles size={14} aria-hidden />
             {form.isConfirming ? text('校验中…', 'Checking…') : text(`开始生成 ${selectedSteps.length} 项`, `Generate ${selectedSteps.length}`)}
@@ -43,6 +46,25 @@ export default function ArchitectureGenerateDialog(props: ArchitectureConfirmFor
       )}
     >
       <div className="arch-dialog">
+        <div className="pi-field">
+          <label htmlFor={modelFieldId}>{text('本次模型', 'Model for this run')} <em>{text('只用于这一次', 'This run only')}</em></label>
+          <select
+            id={modelFieldId}
+            className="pi-input"
+            value={form.selectedGenerationModelId ?? ''}
+            disabled={form.isConfirming || form.generationModels.length === 0}
+            onChange={event => form.setGenerationModelId(event.target.value || null)}
+            aria-label={text('本次模型', 'Model for this run')}
+          >
+            <option value="" disabled>{text('请选择可用生成模型', 'Select a generation model')}</option>
+            {form.generationModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name || model.modelName}{model.id === form.defaultModelId ? text('（默认）', ' (default)') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        {form.modelSelectionError && <Notice tone="warn" title={form.modelSelectionError} />}
         <div className="arch-steps" role="group" aria-label={text('要生成的节', 'Sections to generate')}>
           <div className="arch-step arch-step-all">
             <Check checked={allChecked} onChange={form.setAll} label={text('全选', 'Select all')} />

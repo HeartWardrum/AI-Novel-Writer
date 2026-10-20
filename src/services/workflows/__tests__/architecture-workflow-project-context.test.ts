@@ -97,6 +97,7 @@ function arrangeConfigGenerationJourney(responses: Array<{ content: string; fini
     totalChapters: 100,
     wordsPerChapter: 3000,
     onGenerated,
+    generationModelId: 'config-selected-model',
   })
   return { workflow, onGenerated, saveProject, generateStream, executeMain, invoke }
 }
@@ -325,6 +326,7 @@ describe('config generation full journey completion contract', () => {
     ])
 
     expect(journey.workflow.resourceKeys).toEqual(['novel-config'])
+    expect(journey.workflow.generationModelId).toBe('config-selected-model')
 
     await expect(execute(journey.workflow)).resolves.toBe('生成的配置已成功应用！')
 

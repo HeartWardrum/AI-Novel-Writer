@@ -115,10 +115,11 @@ export function useNovelConfigForm(projectKey: string) {
     setShowGenerateConfig(true)
   }
 
-  const generateField = async (fieldKey: GeneratableField) => {
+  const generateField = async (fieldKey: GeneratableField, generationModelId?: string) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
-    if (!defaultModelId) {
+    const selectedModelId = generationModelId?.trim() || defaultModelId
+    if (!selectedModelId) {
       addLog('error', text('请先在设置中配置 AI 模型', 'Configure an AI model in Settings first.'))
       return
     }
@@ -138,6 +139,7 @@ export function useNovelConfigForm(projectKey: string) {
           projectSession,
           writingLanguage: resolveWritingLanguage(currentProject?.novelConfig.writingLanguage),
           uiLocale: useLocaleStore.getState().locale,
+          generationModelId: selectedModelId,
           data: {},
           cancelled: false,
         },

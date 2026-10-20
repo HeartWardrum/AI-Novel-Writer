@@ -6,21 +6,77 @@ import { renderPrompt } from '../../src/shared/render-prompt'
 import type { GenerationTask } from '../../src/services/generation/generation-harness'
 import { isDeepStrictEqual } from 'node:util'
 
-const instructions = {
+const presetInstructions = {
   refine: ['润色这部分，使语言自然、具体并增强场景表现力。', 'Refine this passage for natural, specific language and stronger scene craft.'],
   expand: ['扩写这部分，补充与情节有关的动作、感官和环境细节。', 'Expand this passage with plot-relevant action, sensory detail, and setting.'],
   continue: ['根据现有因果和人物动机，自然续写接下来的情节。', 'Continue naturally from the established causality and character motivation.'],
   dialogue: ['将这部分改写为有区分度、能推动冲突的自然对话。', 'Rewrite this passage as distinct, natural dialogue that advances the conflict.'],
 } as const
 
+const PRESET_ACTIONS = new Set(Object.keys(presetInstructions))
+const INPUT_KEYS = new Set(['action', 'documentText', 'from', 'to', 'selectedText', 'editInstruction'])
+const MAX_EDIT_INSTRUCTION_BYTES = 32 * 1024
+
+function editInstructionFor(context: EditorInlineContext): string {
+  if (context.action === 'rewrite') {
+    const guidance = context.editInstruction?.trim()
+    if (!guidance) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+    return context.writingLanguage === 'en-US'
+      ? `Rewrite the selected prose according to these author requirements:\n${guidance}`
+      : `按以下要求局部重写选中正文：\n${guidance}`
+  }
+  return presetInstructions[context.action][context.writingLanguage === 'en-US' ? 1 : 0]
+}
+
+function inputSnapshot(input: EditorInlineInput): EditorInlineInput {
+  return input.action === 'rewrite'
+    ? {
+        action: 'rewrite',
+        documentText: input.documentText,
+        from: input.from,
+        to: input.to,
+        selectedText: input.selectedText,
+        editInstruction: input.editInstruction!,
+      }
+    : {
+        action: input.action,
+        documentText: input.documentText,
+        from: input.from,
+        to: input.to,
+        selectedText: input.selectedText,
+      }
+}
+
 export function validateEditorInlineInput(input: EditorInlineInput): EditorInlineInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText'].includes(key))
-    || !Object.hasOwn(instructions, input.action) || typeof input.documentText !== 'string' || typeof input.selectedText !== 'string'
+    || Object.keys(input).some(key => !INPUT_KEYS.has(key))
+    || typeof input.documentText !== 'string' || typeof input.selectedText !== 'string'
     || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from
     || input.to > input.documentText.length || input.documentText.slice(input.from, input.to) !== input.selectedText
     || Buffer.byteLength(input.documentText, 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
-  return structuredClone(input)
+  if (input.action === 'rewrite') {
+    if (typeof input.editInstruction !== 'string') throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+    const editInstruction = input.editInstruction.trim()
+    if (!editInstruction || Buffer.byteLength(input.editInstruction, 'utf8') > MAX_EDIT_INSTRUCTION_BYTES) {
+      throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+    }
+    return structuredClone({
+      action: 'rewrite',
+      documentText: input.documentText,
+      from: input.from,
+      to: input.to,
+      selectedText: input.selectedText,
+      editInstruction,
+    })
+  }
+  if (!PRESET_ACTIONS.has(input.action) || input.editInstruction !== undefined) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
+  return structuredClone({
+    action: input.action,
+    documentText: input.documentText,
+    from: input.from,
+    to: input.to,
+    selectedText: input.selectedText,
+  })
 }
 export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate): EditorInlineContext {
   const valid = validateEditorInlineInput(input)
@@ -33,7 +89,7 @@ export function readEditorInlineContext(run: DurableGenerationRun): EditorInline
     || textHash(JSON.stringify(context)) !== run.binding.sourceManifest.editorInlineContextHash
     || textHash(context.documentText) !== context.documentHash) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   const input = validateEditorInlineInput(run.binding.sourceManifest.editorInlineInput as EditorInlineInput)
-  if (!isDeepStrictEqual(input, { action: context.action, documentText: context.documentText, from: context.from, to: context.to, selectedText: context.selectedText })) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
+  if (!isDeepStrictEqual(input, inputSnapshot(context))) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   return structuredClone(context)
 }
 export function readEditorInlineTask(run: DurableGenerationRun): GenerationTask {
@@ -46,6 +102,6 @@ export function editorInlineTask(context: EditorInlineContext): GenerationTask {
   const { template, writingLanguage } = context
   return { purpose: `editor-ai-${context.action}`, reasoningStage: context.action === 'refine' ? 'review' : 'drafting', output: 'visible-text', messages: [
     { role: 'system', content: composePromptSystemRole(template, writingLanguage) },
-    { role: 'user', content: renderPrompt(template, { edit_instruction: instructions[context.action][writingLanguage === 'en-US' ? 1 : 0], selected_text: context.selectedText }, writingLanguage) },
+    { role: 'user', content: renderPrompt(template, { edit_instruction: editInstructionFor(context), selected_text: context.selectedText }, writingLanguage) },
   ] }
 }

@@ -345,6 +345,7 @@ export function useArchitectureOverview(projectKey: string) {
     stepGuidance: Record<string, string>,
     synopsisRange?: { from: number; to: number },
     targetUnits?: number,
+    generationModelId?: string,
   ) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectMatches || !projectSession || !isProjectSessionPath(projectSession, projectKey)) throw new Error(text('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation was not started.'))
@@ -355,7 +356,7 @@ export function useArchitectureOverview(projectKey: string) {
       stepGuidance,
       synopsisRange,
       targetUnits,
-    }, projectSession)
+    }, projectSession, generationModelId ? { generationModelId } : {})
   }
 
   /** 从上次输出长度中断的检查点继续生成情节大纲（断点续写当前批） */

@@ -36,6 +36,16 @@ beforeEach(() => {
   leaseRequestCount = 0
   useProjectStore.setState({ currentProject: { id: 'editor-project', sessionLease: 'editor-epoch', path: 'C:/合成编辑器', novelConfig: {} } as never })
   useLLMStore.setState({
+    models: [
+      {
+        id: 'editor-model', name: '默认模型', provider: 'custom', protocol: 'openai', modelName: 'editor-model',
+        apiKey: 'test-only-key', baseUrl: 'https://models.example/v1', temperature: 0.7, maxTokens: 4096, purposes: ['generation'],
+      },
+      {
+        id: 'alt-model', name: '备用模型', provider: 'custom', protocol: 'openai', modelName: 'alt-model',
+        apiKey: 'test-only-key', baseUrl: 'https://models.example/v1', temperature: 0.7, maxTokens: 4096, purposes: ['generation'],
+      },
+    ],
     defaultModelId: 'editor-model',
     loaded: true,
     activeRequests: new Map(),
@@ -92,7 +102,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   useProjectStore.setState({ currentProject: null })
-  useLLMStore.setState({ defaultModelId: null, activeRequests: new Map() })
+  useLLMStore.setState({ models: [], defaultModelId: null, activeRequests: new Map() })
   useLocaleStore.setState({ locale: 'zh-CN' })
   Reflect.deleteProperty(window, 'aiNovelAPI')
 })
@@ -136,6 +146,35 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(invoke).toHaveBeenCalledWith('editor-inline:begin', expect.objectContaining({ input: expect.objectContaining({ action: 'refine', documentText: '原文段落' }) }), expect.any(Object))
     expect(invoke.mock.calls.some(([channel]) => String(channel).startsWith('llm:'))).toBe(false)
 
+  })
+
+  it('asks for rewrite guidance and model before starting a selection rewrite', async () => {
+    await act(async () => root.render(
+      <CodeMirrorEditor content="原文段落" mode="prose" />,
+    ))
+
+    await act(async () => page.getByText('原文段落').click({ clickCount: 3 }))
+    await expect.element(page.getByRole('button', { name: '局部重写' })).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '局部重写' }).click())
+
+    await expect.element(page.getByRole('heading', { name: '局部重写' })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '开始重写' })).toBeDisabled()
+    await act(async () => page.getByLabelText(/改写要求/).fill('  把冲突写得更激烈  '))
+    await expect.element(page.getByRole('combobox', { name: /本次模型/ })).toHaveValue('editor-model')
+    await act(async () => page.getByRole('combobox', { name: /本次模型/ }).selectOptions('alt-model'))
+    await expect.element(page.getByRole('button', { name: '开始重写' })).toBeEnabled()
+    await act(async () => page.getByRole('button', { name: '开始重写' }).click())
+
+    await expect.element(page.getByText('局部重写预览')).toBeVisible()
+    expect(invoke).toHaveBeenCalledWith('editor-inline:begin', expect.objectContaining({
+      modelId: 'alt-model',
+      input: expect.objectContaining({
+        action: 'rewrite',
+        documentText: '原文段落',
+        selectedText: '原文段落',
+        editInstruction: '把冲突写得更激烈',
+      }),
+    }), expect.any(Object))
   })
 
   it('applies a delayed AI result to the frozen original selection instead of a later selection', async () => {

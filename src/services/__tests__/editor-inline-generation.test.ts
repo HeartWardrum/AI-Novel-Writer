@@ -70,6 +70,18 @@ it('begin 回执不能替换作者选定的动作', async () => {
   bridge(vi.fn(async () => stored))
   await expect(createEditorInlineGeneration(session).open({ input: { ...input, action: 'expand' }, modelId: '模型', uiActionNonce: '动作' })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
 })
+it('局部重写要求 begin 回执保留作者改写意见', async () => {
+  const rewriteInput = { action: 'rewrite' as const, documentText: input.documentText, from: input.from, to: input.to, selectedText: input.selectedText, editInstruction: '加强冲突' }
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rewriteInput.documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
+  const stored = { view: { handle, status: 'running', artifacts: [] }, modelId: '原模型', sourceStatus: 'current', context: { ...rewriteInput, kind: 'author-draft', documentHash: hash } }
+  bridge(vi.fn(async () => stored))
+  expect((await createEditorInlineGeneration(session).open({ input: rewriteInput, modelId: '模型', uiActionNonce: '动作' })).context.editInstruction).toBe('加强冲突')
+  await expect(createEditorInlineGeneration(session).open({
+    input: { ...rewriteInput, editInstruction: '别的意见' },
+    modelId: '模型',
+    uiActionNonce: '动作2',
+  })).rejects.toThrow('EDITOR_INLINE_CONTEXT_MISMATCH')
+})
 it('主进程显式恢复更新 epoch，后续 read/cancel 使用原 run 当前身份', async () => {
   const stored = await recovery()
   const oldHandle = { ...handle, epoch: '旧会话' }

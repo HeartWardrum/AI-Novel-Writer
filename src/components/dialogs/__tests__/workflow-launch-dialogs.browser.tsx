@@ -3,12 +3,27 @@ import { page } from 'vitest/browser'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
+import type { ModelProfile } from '../../../shared/ipc-channels'
+import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import ArchitectureConfirmDialog from '../ArchitectureConfirmDialog'
 import GenerateBlueprintsDialog from '../../stage/blueprint/GenerateBlueprintsDialog'
 import { renderPlotOutlineSynopsis } from '../../../shared/plot-outline-contract'
+
+const GENERATION_MODELS: ModelProfile[] = [
+  {
+    id: 'dialog-model', name: 'Dialog Model', provider: 'custom', protocol: 'openai',
+    modelName: 'dialog-model', apiKey: 'test-only', baseUrl: 'https://models.example/v1',
+    temperature: 0.7, maxTokens: 4096, purposes: ['generation'],
+  },
+  {
+    id: 'alt-model', name: 'Alt Model', provider: 'custom', protocol: 'openai',
+    modelName: 'alt-model', apiKey: 'test-only', baseUrl: 'https://models.example/v1',
+    temperature: 0.7, maxTokens: 4096, purposes: ['generation'],
+  },
+]
 
 /** 数据库里还没有大纲。 */
 const NO_OUTLINE = { synopsis: '', totalChapters: 100, writingLanguage: 'zh-CN' as const }
@@ -38,6 +53,7 @@ beforeEach(() => {
   blueprintChapterNumbers = []
   planningPreferences = {}
   useLocaleStore.setState({ locale: 'zh-CN' })
+  useLLMStore.setState({ models: GENERATION_MODELS, defaultModelId: 'dialog-model', loaded: true })
   useProjectStore.setState({ currentProject: project as never })
   useWorkflowStore.setState({
     activeRuns: [], history: [], globalLogs: [], waitingRuns: {}, currentRun: null,
@@ -152,7 +168,20 @@ describe('workflow launch dialogs', () => {
       mode: 'append',
       startChapter: 10,
       count: 1,
-    }))
+    }), 'dialog-model')
+  })
+
+  it('passes the selected blueprint generation model to onConfirm', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(true)
+    await act(async () => root.render(
+      <GenerateBlueprintsDialog isOpen onClose={vi.fn()} existingCount={0} onConfirm={onConfirm} />,
+    ))
+    await act(async () => page.getByLabelText(/本次模型/).selectOptions('alt-model'))
+    await act(async () => page.getByRole('button', { name: '开始生成' }).click())
+    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'full', startChapter: 1, count: 5 }),
+      'alt-model',
+    ))
   })
 
   it('appends after existing blueprints when finalized manuscript authority is behind', async () => {
@@ -177,7 +206,7 @@ describe('workflow launch dialogs', () => {
       mode: 'append',
       startChapter: 5,
       count: 4,
-    }))
+    }), 'dialog-model')
   })
 
   it('appends after the highest existing blueprint when chapter numbers are non-consecutive', async () => {
@@ -200,7 +229,7 @@ describe('workflow launch dialogs', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
       mode: 'append',
       startChapter: 5,
-    }))
+    }), 'dialog-model')
   })
 
   it('blocks blueprint generation when finalized authority has a gap', async () => {
@@ -269,6 +298,31 @@ describe('workflow launch dialogs', () => {
       {},
       { from: 1, to: 5 },
       600,
+      'dialog-model',
+    ))
+  })
+
+  it('passes the selected architecture generation model to onConfirm', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined)
+    await act(async () => root.render(
+      <ArchitectureConfirmDialog
+        isOpen
+        onClose={vi.fn()}
+        archStatus={{ premise: true, characters: true, worldbuilding: true, synopsis: true }}
+        confirmed={{ premise: true, characters: true, worldbuilding: true, synopsis: true }}
+        synopsisSource={NO_OUTLINE}
+        initialSelectedSteps={['premise']}
+        onConfirm={onConfirm}
+      />,
+    ))
+    await act(async () => page.getByLabelText(/本次模型/).selectOptions('alt-model'))
+    await act(async () => page.getByRole('button', { name: /确认生成/ }).click())
+    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith(
+      ['premise'],
+      {},
+      undefined,
+      undefined,
+      'alt-model',
     ))
   })
 
@@ -301,6 +355,7 @@ describe('workflow launch dialogs', () => {
       {},
       { from: 21, to: 30 },
       600,
+      'dialog-model',
     ))
   })
 
@@ -335,7 +390,7 @@ describe('workflow launch dialogs', () => {
     await expect.element(page.getByText('将覆盖第 1–5 章')).toBeVisible()
     await expect.element(page.getByText('第 1–5 章按本次结果替换，第 6–16 章原样保留。')).toBeVisible()
     await act(async () => submit.click())
-    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith(['synopsis'], {}, { from: 1, to: 5 }, 600))
+    await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith(['synopsis'], {}, { from: 1, to: 5 }, 600, 'dialog-model'))
   })
 
   it.each(['', '0', '-1', '1.5'])('rejects invalid synopsis range value %s without falling back to the whole book', async invalidFrom => {
@@ -509,7 +564,10 @@ it('shows blueprint recovery diagnostics without blocking independent generation
   await expect.element(page.getByRole('button', { name: '开始生成' })).toBeEnabled()
   await act(async () => page.getByRole('button', { name: '开始生成' }).click())
   expect(onConfirm).toHaveBeenCalledOnce()
-  expect(onConfirm).toHaveBeenCalledWith({ mode: 'full', startChapter: 1, count: 5, targetUnits: 600, pacingGuidance: undefined })
+  expect(onConfirm).toHaveBeenCalledWith(
+    { mode: 'full', startChapter: 1, count: 5, targetUnits: 600, pacingGuidance: undefined },
+    'dialog-model',
+  )
 })
 
 
@@ -541,8 +599,8 @@ it.each(['outline', 'blueprint'] as const)('persists the %s target independently
     await page.getByRole('button', { name: kind === 'outline' ? /确认生成/ : '开始生成' }).click()
   })
   await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledOnce())
-  if (kind === 'outline') expect(onConfirm).toHaveBeenCalledWith(['synopsis'], {}, { from: 1, to: 10 }, 1000)
-  else expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ count: 10, targetUnits: 1000 }))
+  if (kind === 'outline') expect(onConfirm).toHaveBeenCalledWith(['synopsis'], {}, { from: 1, to: 10 }, 1000, 'dialog-model')
+  else expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ count: 10, targetUnits: 1000 }), 'dialog-model')
   expect(planningPreferences).toEqual(kind === 'outline'
     ? { outlineTargetUnits: 1000, blueprintTargetUnits: 800 }
     : { outlineTargetUnits: 700, blueprintTargetUnits: 1000 })
