@@ -14,6 +14,7 @@ import {
   parseCanonicalProjectManifest,
 } from '../../src/shared/project-format'
 import { readPortableCharacterAvatarRows } from '../repositories/character-asset-repository'
+import { readPortableCharacterPortraitRows } from '../repositories/character-portrait-repository'
 import {
   PORTABLE_PROJECT_FORMAT_VERSION,
   PORTABLE_SOURCE_SCHEMA_VERSION,
@@ -813,6 +814,7 @@ export function sanitizePortableDatabase(databasePath: string): {
     db.pragma('secure_delete = ON')
     const sourceSchema = assertPortableSourceSchema(db)
     const avatarRows = readPortableCharacterAvatarRows(db)
+    const portraitRows = readPortableCharacterPortraitRows(db)
     const reviewRoots = new Set((db.prepare('SELECT root_action_id FROM review_cycles').all() as Array<{
       root_action_id: string }>).map(row => row.root_action_id))
     const reviewRuns = new Set((db.prepare('SELECT run_id,root_action_id FROM generation_runs').all() as Array<{
@@ -828,6 +830,11 @@ export function sanitizePortableDatabase(databasePath: string): {
       }
       if ('sourceRelativePath' in row) portablePathKey(row.sourceRelativePath)
       if ('relativePath' in row) portablePathKey(row.relativePath)
+    }
+    for (const row of portraitRows) {
+      safeId(row.portraitId)
+      safeId(row.characterId)
+      portablePathKey(row.relativePath)
     }
     const history: HistoryProjection[] = []
     const tableCounts: Record<string, number> = {}
@@ -1017,11 +1024,13 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
     const sourceFreeze = readPortableRuntimeFreeze(sourceRoot)
     const sourceSnapshot = new BetterSqlite(sourceSnapshotPath, { readonly: true, fileMustExist: true })
     let avatarRows: ReturnType<typeof readPortableCharacterAvatarRows>
+    let portraitRows: ReturnType<typeof readPortableCharacterPortraitRows>
     let sourceSchema: ReturnType<typeof assertPortableSourceSchema>
     try {
       sourceSchema = assertPortableSourceSchema(sourceSnapshot)
       if (sourceFreeze.active) readPortableCurrentAuthority({ database: sourceSnapshot, projectStorageRoot, projectId: canonicalManifest.projectId })
       avatarRows = readPortableCharacterAvatarRows(sourceSnapshot)
+      portraitRows = readPortableCharacterPortraitRows(sourceSnapshot)
     } finally { sourceSnapshot.close() }
     recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-wal`)
     recordOwnedFileIfPresent(attempt, `${sourceSnapshotPath}-shm`)
@@ -1078,6 +1087,16 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
         avatarReferenceProjections.push({ ...row, nonReplayable: true })
         continue
       }
+      const relativePath = portablePathKey(row.relativePath)
+      if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
+      const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
+      if (!contained(projectStorageRoot, sourcePath)) fail('PORTABLE_ASSET_UNSAFE')
+      const info = regularFile(sourcePath, 'PORTABLE_ASSET_MISSING')
+      if (info.size !== row.byteSize || await hashFile(sourcePath) !== row.contentHash) fail('PORTABLE_SOURCE_CHANGED')
+      addSource({ path: row.relativePath, byteSize: row.byteSize, sha256: row.contentHash,
+        disposition: 'avatar-asset' }, sourcePath)
+    }
+    for (const row of portraitRows) {
       const relativePath = portablePathKey(row.relativePath)
       if (!relativePath) fail('PORTABLE_ASSET_UNSAFE')
       const sourcePath = path.resolve(projectStorageRoot, ...row.relativePath.split('/'))
@@ -1156,6 +1175,7 @@ export async function exportPortableProject(input: ExportPortableProjectInput): 
         ...(provided.semanticCounts ?? {}),
         ...sanitized.tableCounts,
         avatars: avatarRows.filter(row => row.kind !== 'unresolved-reference').length,
+        portraits: portraitRows.length,
         'avatar-references': avatarReferenceProjections.length,
       },
       omittedItems: [

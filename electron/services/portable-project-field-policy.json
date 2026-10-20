@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "rules": {
     "D": ["preserve-domain", "signed-domain-value", "portable-domain-copy"],
     "H": ["historical-nonreplayable", "nonreplayable-history", "portable-history-projector"],
@@ -17,6 +17,7 @@
     "character_avatar_assets", "character_avatar_unresolved"
   ],
   "m06Tables": ["review_cycle_merges"],
+  "m07Tables": ["character_portrait_assets", "character_portrait_unresolved"],
   "optionalFields": ["characters.avatar"],
   "deltaCharacterFields": ["character_id", "legacy_key", "static_provenance", "identity_revision", "retired"],
   "signedOverrides": {
@@ -79,6 +80,8 @@
     "character_aliases": {"character_id":"D","name":"D","source_key":"D","valid_from":"D","valid_through":"D"},
     "character_avatar_assets": {"character_id":"A","asset_revision":"A","relative_path":"A","content_hash":"A","mime":"A","byte_size":"A","source_reference":"A"},
     "character_avatar_unresolved": {"record_id":"A","disposition":"A","source_reference":"A","source_relative_path":"A","preserved_relative_path":"A","content_hash":"A","mime":"A","byte_size":"A","candidate_character_ids_json":"A"},
+    "character_portrait_assets": {"portrait_id":"A","character_id":"A","sort_index":"A","relative_path":"A","content_hash":"A","mime":"A","byte_size":"A","created_at":"A"},
+    "character_portrait_unresolved": {"record_id":"A","disposition":"A","source_reference":"A","source_relative_path":"A","preserved_relative_path":"A","content_hash":"A","mime":"A","byte_size":"A","candidate_character_ids_json":"A"},
     "character_identity_approvals": {"operation_id":"D","payload_hash":"D","receipt_json":"R"},
     "character_identity_meta": {"id":"D","revision":"D","legacy_count":"D"},
     "character_identity_origins": {"character_id":"D","source_key":"D","original_row_json":"D","original_hash":"D"},

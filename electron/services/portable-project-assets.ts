@@ -14,7 +14,7 @@ import type { PortableAssetProvider, PortableProvidedFile } from './project-arch
 export const PORTABLE_KNOWLEDGE_SOURCE_PATH = 'portable-knowledge-source.json'
 
 const KNOWN_OMITTED_TOP_LEVEL = new Set([
-  'avatars', 'project.db', 'project.db-wal', 'project.db-shm', 'project.db-journal', 'project.json',
+  'avatars', 'portraits', 'project.db', 'project.db-wal', 'project.db-shm', 'project.db-journal', 'project.json',
   'lancedb', 'embedding-spaces.json', 'vectors.json', 'vectors.json.migrated',
   'vectors.json.migration-journal.json', 'portable-transfer-authority.json', 'portable-runtime-freeze.json',
   PORTABLE_KNOWLEDGE_SOURCE_PATH, 'knowledge-copies', 'cache', 'logs', 'temp', 'trash',

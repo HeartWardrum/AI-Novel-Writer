@@ -38,6 +38,9 @@ vi.mock('../controllers/character-avatar-controller', () => ({
     mocks.avatarDependencies = dependencies
   }),
 }))
+vi.mock('../controllers/character-portrait-controller', () => ({
+  registerCharacterPortraitController: vi.fn(),
+}))
 vi.mock('../controllers/config-controller', () => ({ registerConfigController: vi.fn() }))
 vi.mock('../controllers/project-controller', () => ({ registerProjectController: vi.fn() }))
 vi.mock('../controllers/project-archive-controller', () => ({ registerProjectArchiveController: vi.fn() }))

@@ -19,6 +19,8 @@ import { registerChapterLifecycleController } from './controllers/chapter-lifecy
 import { registerExternalFileGrantController } from './controllers/external-file-grant-controller'
 import { registerAppDataController } from './controllers/app-data-controller'
 import { registerCharacterAvatarController } from './controllers/character-avatar-controller'
+import { registerCharacterPortraitController } from './controllers/character-portrait-controller'
+import { CharacterPortraitService } from './services/character-portrait-service'
 import { CharacterAssetService } from './services/character-asset-service'
 import { projectAccess } from './services/project-access'
 import { getProjectDataRoot } from './services/project-data-locator'
@@ -59,6 +61,22 @@ export function registerIPCHandlers() {
         storageRoot: getProjectDataRoot(active.rootPath), database })
       service.recordReclaimableOrphans()
       return service
+    },
+  })
+  registerCharacterPortraitController({
+    resolveService(_event, context) {
+      let active
+      try {
+        active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+      } catch { return null }
+      const database = getProjectDb()
+      if (!database) return null
+      return new CharacterPortraitService({
+        projectId: context.projectId,
+        sessionLease: context.leaseId,
+        storageRoot: getProjectDataRoot(active.rootPath),
+        database,
+      })
     },
   })
   registerFinalizationController()

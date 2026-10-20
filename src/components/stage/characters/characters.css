@@ -323,6 +323,61 @@
   margin-left: calc(-1 * var(--s-2));
 }
 
+.cast-portraits {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+
+.cast-portraits-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.cast-portraits-title {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.cast-portraits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cast-portraits-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: var(--s-2);
+  background: var(--surface-1, transparent);
+}
+
+.cast-portraits-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.cast-portraits-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  margin-left: calc(-1 * var(--s-2));
+}
+
 .cast-profile-actions {
   display: flex;
   align-items: center;

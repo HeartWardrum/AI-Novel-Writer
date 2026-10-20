@@ -7,6 +7,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { authorStateEdit, CHARACTER_STATE_FIELDS, stateFieldView } from '../../editor/character-state-fields'
 import RelationshipGraph from '../../editor/RelationshipGraph'
 import { useCharacterAvatar } from '../../editor/use-character-avatar'
+import { useCharacterPortraits } from '../../editor/use-character-portraits'
 import { useCharacterProfile } from '../../editor/use-character-profile'
 import { Button } from '../../ui/Button'
 import { DangerConfirm } from '../../ui/DangerConfirm'
@@ -40,6 +41,7 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
   const [view, setView] = useState<ProfileView>('edit')
   const [confirming, setConfirming] = useState<'selected' | 'all' | null>(null)
   const avatar = useCharacterAvatar(card?.characterId ?? null, dataReady && view === 'edit')
+  const portraits = useCharacterPortraits(card?.characterId ?? null, dataReady && view === 'edit')
   const roleText = (role: unknown) => {
     const { zhCN, enUS } = getCharacterRoleLabels(role)
     return text(zhCN, enUS)
@@ -175,6 +177,45 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
           </div>
         ) : (
           <div className="cast-grid">
+            <section className="cast-portraits" aria-label={text('人设图', 'Character portraits')}>
+              <div className="cast-portraits-head">
+                <h2 className="cast-portraits-title">{text('人设图', 'Character portraits')}</h2>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!portraits.canEdit || portraits.busy || identityBusy}
+                  onClick={() => { void portraits.addPortraits() }}
+                >
+                  {text('添加人设图', 'Add portraits')}
+                </Button>
+              </div>
+              {!portraits.canEdit && (
+                <p className="cast-profile-note">{text('先保存角色，再添加人设图。', 'Save the character before adding portraits.')}</p>
+              )}
+              {portraits.notice && <p className="cast-profile-error" role="alert">{portraits.notice}</p>}
+              {portraits.portraits.length === 0 ? (
+                <p className="cast-profile-note">{text('还没有人设图；头像与人设图相互独立。', 'No portraits yet. Avatars and portraits are separate.')}</p>
+              ) : (
+                <ul className="cast-portraits-grid">
+                  {portraits.portraits.map((item, index) => (
+                    <li key={item.portraitId} className="cast-portraits-item">
+                      <img src={item.url} alt={text(`${name}人设图 ${index + 1}`, `${name} portrait ${index + 1}`)} />
+                      <div className="cast-portraits-item-actions">
+                        <Button variant="text" size="sm" disabled={portraits.busy || index === 0} onClick={() => { void portraits.movePortrait(item.portraitId, -1) }}>
+                          {text('左移', 'Left')}
+                        </Button>
+                        <Button variant="text" size="sm" disabled={portraits.busy || index === portraits.portraits.length - 1} onClick={() => { void portraits.movePortrait(item.portraitId, 1) }}>
+                          {text('右移', 'Right')}
+                        </Button>
+                        <Button variant="text" size="sm" disabled={portraits.busy} onClick={() => { void portraits.removePortrait(item.portraitId) }}>
+                          {text('删除', 'Delete')}
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
             <div className="cast-row-fields">
               <Field label={text('姓名', 'Name')}>
                 {id => <input id={id} className="pi-input cast-input" value={card.name} disabled={identityBusy}
