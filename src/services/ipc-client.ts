@@ -52,6 +52,7 @@ function isProjectScopedChannel(channel: string): boolean {
     || channel.startsWith('agent-generation:')
     || channel.startsWith('import-generation:')
     || channel.startsWith('editor-inline:')
+    || channel.startsWith('blueprint-next:')
     || channel.startsWith('db:')
     || channel.startsWith('kb:')
     || channel.startsWith('chapter:')

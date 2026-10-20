@@ -5,6 +5,7 @@ import type { ReviewRevisionGenerationInvokeChannels } from './review-revision-g
 import type { AgentGenerationChannels } from './agent-generation'
 import type { ImportGenerationChannels } from './import-generation'
 import type { EditorInlineGenerationChannels } from './editor-inline-generation'
+import type { BlueprintNextOptionsChannels } from './blueprint-next-options'
 import type { FinalizationGenerationChannels } from './finalization-generation'
 import type { GraphGenerationChannels } from './graph-generation'
 import type { LegacyRosterGenerationChannels } from './legacy-roster-generation'
@@ -1373,7 +1374,7 @@ export interface MCPChannels {
 }
 
 // ===== 合并所有频道 =====
-export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
+export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
 export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */

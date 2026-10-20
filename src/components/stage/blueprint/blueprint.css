@@ -536,3 +536,64 @@
   border-radius: var(--radius-lg);
   background: var(--paper);
 }
+
+.stage-next-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.stage-next-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-next-mode {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  padding: 6px 10px;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.stage-next-mode[data-active] {
+  border-color: var(--ink-3);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.stage-next-mode:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.stage-next-hint,
+.stage-next-cost,
+.stage-next-preview,
+.stage-next-bad {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.stage-next-model {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-12);
+  color: var(--ink-2);
+}
+
+.stage-next-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

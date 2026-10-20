@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, ListChecks, MoreHorizontal, Sparkles } from 'lucide-react'
+import { BookOpen, Compass, ListChecks, MoreHorizontal, Sparkles } from 'lucide-react'
 import { blueprintWritePrefill } from '../../../services/workflows/chapter-write-launch'
 import type { DirectoryWorkflowParams } from '../../../services/workflows/directory-workflow'
 import { openPlanningRecoveryDraft } from '../../../stores/editor-store'
@@ -21,6 +21,7 @@ import BatchWriteDialog from './BatchWriteDialog'
 import BlueprintCard from './BlueprintCard'
 import BlueprintPlanList from './BlueprintPlanList'
 import GenerateBlueprintsDialog from './GenerateBlueprintsDialog'
+import NextOptionsDialog from './NextOptionsDialog'
 import { pluralEn } from '../../../shared/plural-en'
 
 /** 等作者确认的一步：覆盖已有蓝图、生成前的架构警告、清空全部、删除此章、清除误导入正文。 */
@@ -45,6 +46,7 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   const writeRequest = useStageStore(s => s.writeRequest)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [nextOptionsOpen, setNextOptionsOpen] = useState(false)
   const [refsBusy, setRefsBusy] = useState(false)
   const [ask, setAsk] = useState<Ask | null>(null)
 
@@ -162,6 +164,15 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
           {selected && (
             <Button
               variant="secondary"
+              disabled={!plan.projectDataReady || Boolean(plan.authorityError)}
+              onClick={() => setNextOptionsOpen(true)}
+            >
+              <Compass size={15} aria-hidden />{text('接下来怎么写', 'What next')}
+            </Button>
+          )}
+          {selected && (
+            <Button
+              variant="secondary"
               disabled={!plan.projectDataReady || refsBusy}
               onClick={() => void openChapterReferences()}
             >
@@ -258,6 +269,19 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
         startChapterNumber={next?.chapterNumber ?? null}
         onClose={() => setBatchOpen(false)}
       />
+      {selected && (
+        <NextOptionsDialog
+          open={nextOptionsOpen}
+          onOpenChange={setNextOptionsOpen}
+          blueprint={selected}
+          onApply={fields => {
+            plan.updateField('purpose', fields.purpose)
+            plan.updateField('keyEvents', fields.keyEvents)
+            plan.updateField('suspenseHook', fields.suspenseHook)
+            plan.updateField('characters', fields.characters)
+          }}
+        />
+      )}
 
       <DangerConfirm
         open={ask?.kind === 'overwrite'}

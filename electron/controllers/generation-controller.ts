@@ -7,6 +7,7 @@ import type { ReviewRevisionGenerationInvokeChannels } from '../../src/shared/re
 import type { AgentGenerationChannels } from '../../src/shared/agent-generation'
 import type { ImportGenerationChannels } from '../../src/shared/import-generation'
 import type { EditorInlineGenerationChannels } from '../../src/shared/editor-inline-generation'
+import type { BlueprintNextOptionsChannels } from '../../src/shared/blueprint-next-options'
 import type { FinalizationGenerationChannels } from '../../src/shared/finalization-generation'
 import type { GraphGenerationChannels } from '../../src/shared/graph-generation'
 import type { LegacyRosterGenerationChannels } from '../../src/shared/legacy-roster-generation'
@@ -33,7 +34,7 @@ import { KnowledgeBaseUnavailableError, knowledgeBaseLoader } from '../services/
 import { getEmbeddingConfig } from './kb-controller'
 
 type Owner = ReturnType<typeof createMainGenerationOwner>
-type OwnerChannels = LegacyRosterGenerationChannels & GraphGenerationChannels & GenerationOwnerChannels & CharacterProposalChannels & FinalizedCharacterGenerationChannels & ReviewRevisionGenerationInvokeChannels & AgentGenerationChannels & ImportGenerationChannels & EditorInlineGenerationChannels & FinalizationGenerationChannels
+type OwnerChannels = LegacyRosterGenerationChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & GenerationOwnerChannels & CharacterProposalChannels & FinalizedCharacterGenerationChannels & ReviewRevisionGenerationInvokeChannels & AgentGenerationChannels & ImportGenerationChannels & EditorInlineGenerationChannels & FinalizationGenerationChannels
 const owners = new Map<Database.Database, { owner: Owner; session: ProjectSessionContext; subscribers: Set<WebContents> }>()
 const ownerSessions = new WeakMap<Owner, ProjectSessionContext>()
 /** Called synchronously inside the same SQLite transaction as the formal effect. */
@@ -222,6 +223,10 @@ export function registerGenerationController(options: {
   register('editor-inline:read-recovery', 1, (owner, request) => owner.readEditorInlineRecovery(request.handle))
   register('editor-inline:execute', 1, (owner, request) => owner.executeEditorInline(request.handle))
   register('editor-inline:cancel', 1, (owner, request) => owner.cancelEditorInline(request.handle))
+  register('blueprint-next:begin', 1, (owner, request) => owner.beginBlueprintNext(request))
+  register('blueprint-next:read-recovery', 1, (owner, request) => owner.readBlueprintNextRecovery(request.handle))
+  register('blueprint-next:execute', 1, (owner, request) => owner.executeBlueprintNext(request.handle))
+  register('blueprint-next:cancel', 1, (owner, request) => owner.cancelBlueprintNext(request.handle))
   register('agent-generation:resume', 1, (owner, request) => owner.agents.resume(request.handle))
   register('agent-generation:round', 1, (owner, request) => owner.agents.executeRound(request))
   register('agent-generation:claim-tool', 1, (owner, request) => owner.agents.claimTool(request))

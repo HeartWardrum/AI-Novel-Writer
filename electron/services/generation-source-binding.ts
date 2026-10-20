@@ -28,6 +28,8 @@ import { captureFinalizationGenerationContext, finalizationSlotKey, finalization
 import type { GraphGenerationContext, GraphGenerationInput } from '../../src/shared/graph-generation';
 import { captureGraphGenerationContext, graphGenerationTask, validateGraphGenerationInput } from './graph-generation-source';
 import { provenGraphOwnEventIds } from './graph-generation';
+import type { BlueprintNextContext, BlueprintNextInput } from '../../src/shared/blueprint-next-options';
+import { blueprintNextTask, captureBlueprintNextContext, validateBlueprintNextInput } from './blueprint-next-options-source';
 import type { LegacyRosterGenerationContext } from '../../src/shared/legacy-roster-generation';
 import { captureLegacyRosterGenerationContext, legacyRosterGenerationTask } from './legacy-roster-generation-context';
 import { readPortableCurrentAuthority } from './portable-current-authority';
@@ -66,6 +68,9 @@ export interface GenerationSourceBindingInput {
     graphGenerationInput?: GraphGenerationInput;
     graphGenerationKey?: string;
     graphGenerationContext?: GraphGenerationContext;
+    blueprintNextInput?: BlueprintNextInput;
+    blueprintNextKey?: string;
+    blueprintNextContext?: BlueprintNextContext;
     legacyRosterKey?: string;
     legacyRosterContext?: LegacyRosterGenerationContext;
     modelReceipt: SafeGenerationModelReceipt;
@@ -283,12 +288,18 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     const agentInput = input.agentInput ? validateAgentGenerationInput(input.agentInput) : undefined;
     const editorInlineInput = input.editorInlineInput ? validateEditorInlineInput(input.editorInlineInput) : undefined;
     const graphInput = input.graphGenerationInput ? validateGraphGenerationInput(input.graphGenerationInput) : undefined;
+    const blueprintNextInput = input.blueprintNextInput ? validateBlueprintNextInput(input.blueprintNextInput) : undefined;
     if (input.legacyRosterKey && (input.operation !== 'legacy-character-roster-repair' || !isDeepStrictEqual(input.promptKeys, ['legacy-roster'])
         || input.skillStages.length || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined
-        || input.authorInputs?.length || graphInput)) fail('GENERATION_LEGACY_SELECTION_INVALID');
+        || input.authorInputs?.length || graphInput || blueprintNextInput)) fail('GENERATION_LEGACY_SELECTION_INVALID');
     if (graphInput && (input.operation !== ({ plot: 'plot-tree-snapshot', plan: 'narrative-thread-plan-candidate', event: 'narrative-thread-event-candidate' } as const)[graphInput.kind]
         || !input.graphGenerationKey || !isDeepStrictEqual(input.promptKeys, [`graph-${graphInput.kind}`]) || input.skillStages.length
-        || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined || input.authorInputs?.length)) fail('GENERATION_GRAPH_SELECTION_INVALID');
+        || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined || input.authorInputs?.length
+        || blueprintNextInput)) fail('GENERATION_GRAPH_SELECTION_INVALID');
+    if (blueprintNextInput && (input.operation !== 'blueprint-next-options'
+        || !input.blueprintNextKey || !isDeepStrictEqual(input.promptKeys, ['blueprint-next']) || input.skillStages.length
+        || input.selectedDraftIds.length || input.selectedFinalizedDraftIds.length || input.chapterNumber !== undefined
+        || input.authorInputs?.length || graphInput || editorInlineInput)) fail('GENERATION_BLUEPRINT_NEXT_SELECTION_INVALID');
     const authorInputs = freezeAuthorInputs(input.authorInputs);
     const blueprintChapters = input.selectedBlueprintChapterNumbers ?? [];
     if (!Array.isArray(blueprintChapters) || blueprintChapters.length > 10_000 || new Set(blueprintChapters).size !== blueprintChapters.length
@@ -350,6 +361,7 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
     for (const item of authorInputs)
         add(`author-action:${item.id}`, 0, item.text, 'author-constraint', 'explicit immutable author input for this action; not a database or file identity');
     let graphContext: GraphGenerationContext | undefined;
+    let blueprintNextContext: BlueprintNextContext | undefined;
     let legacyContext: LegacyRosterGenerationContext | undefined;
     // SQLite supplies one read transaction; filesystem selections are read twice below.
     const facts = deps.db.transaction(() => {
@@ -367,6 +379,10 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
             graphContext = captureGraphGenerationContext(deps.db, graphInput, input, input.graphGenerationKey!, input.graphGenerationContext,
                 input.graphGenerationContext ? provenGraphOwnEventIds(deps.db, input.graphGenerationContext) : []);
             add('graph-generation-context', 0, JSON.stringify(graphContext), 'author-constraint', 'main captured graph sources and original target baseline');
+        }
+        if (blueprintNextInput) {
+            blueprintNextContext = captureBlueprintNextContext(deps.db, blueprintNextInput, input, input.blueprintNextKey!, input.blueprintNextContext);
+            add('blueprint-next-context', 0, JSON.stringify(blueprintNextContext), 'author-constraint', 'main captured blueprint neighbors and architecture brief for next-options advisor');
         }
         if (agentInput) {
             const blueprints = deps.db.prepare('SELECT * FROM blueprints ORDER BY chapter_number').all() as Record<string, unknown>[];
@@ -475,6 +491,10 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
             assets.push({ scope: 'builtin', identity: `prompt:${key}:${facts.language}`, hash: hash(JSON.stringify(graphGenerationTask(graphContext))) });
             continue;
         }
+        if (blueprintNextContext) {
+            assets.push({ scope: 'builtin', identity: `prompt:${key}:${facts.language}`, hash: hash(JSON.stringify(blueprintNextTask(blueprintNextContext))) });
+            continue;
+        }
         const builtin = deps.readBuiltinPrompt(key, facts.language);
         if (typeof builtin !== 'string' || !builtin)
             fail('GENERATION_BUILTIN_PROMPT_MISSING');
@@ -574,6 +594,18 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         Object.assign(sourceManifest, { graphGenerationInput: graphContext.input, graphGenerationKey: graphContext.key,
             graphGenerationContext: graphContext, graphGenerationContextHash: hash(JSON.stringify(graphContext)), graphGenerationOriginEpoch: graphContext.originEpoch,
             graphGenerationTask: task, graphGenerationTaskHash: hash(JSON.stringify(task)) });
+    }
+    if (blueprintNextContext) {
+        const task = blueprintNextTask(blueprintNextContext);
+        Object.assign(sourceManifest, {
+            blueprintNextInput: blueprintNextContext.input,
+            blueprintNextKey: blueprintNextContext.key,
+            blueprintNextContext,
+            blueprintNextContextHash: hash(JSON.stringify(blueprintNextContext)),
+            blueprintNextOriginEpoch: blueprintNextContext.originEpoch,
+            blueprintNextTask: task,
+            blueprintNextTaskHash: hash(JSON.stringify(task)),
+        });
     }
     if (finalizationContext) {
         const task = finalizationGenerationTask(finalizationContext, transferAuthority?.originProjectId);

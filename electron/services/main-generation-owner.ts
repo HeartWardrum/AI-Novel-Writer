@@ -38,6 +38,17 @@ import type { ApproveCharacterProposalRequest } from '../../src/shared/character
 import type { AgentGenerationContext, AgentGenerationInput } from '../../src/shared/agent-generation'
 import type { EditorInlineInput, EditorInlineRecovery, EditorInlineGenerationChannels } from '../../src/shared/editor-inline-generation'
 import { validateEditorInlineInput, readEditorInlineContext, readEditorInlineTask } from './editor-inline-generation'
+import type {
+  BlueprintNextInput,
+  BlueprintNextOptionsChannels,
+  BlueprintNextRecovery,
+} from '../../src/shared/blueprint-next-options'
+import {
+  parseBlueprintNextResult,
+  readBlueprintNextContext,
+  readBlueprintNextTask,
+  validateBlueprintNextInput,
+} from './blueprint-next-options-source'
 import type { FinalizationGenerationChannels, FinalizationGenerationSlot, FinalizationGenerationRecovery } from '../../src/shared/finalization-generation'
 import { FinalizationGeneration } from './finalization-generation'
 import { finalizationSlotKey, readFinalizationGenerationContext } from './finalization-generation-source'
@@ -69,7 +80,7 @@ export interface MainGenerationOwnerDependencies {
   assertCurrent: () => void
   leases: ModelExecutionLeaseRegistry
   loadModel: (id: string) => ModelProfile | null
-  buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
+  buildBinding: (selection: BeginGenerationRequest & { knowledgeSnapshot?: GenerationKnowledgeSnapshot; finalizedCharacterContextHash?: string; reviewRevisionContext?: ReviewRevisionContext; agentInput?: AgentGenerationInput; agentSession?: { key: string; roundIndex: number }; editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; blueprintNextInput?: BlueprintNextInput; blueprintNextKey?: string; legacyRosterKey?: string }, model: SafeGenerationModelReceipt, policy: MainGenerationPolicy) => RunBinding
   rebuildBinding: (previous: RunBinding, model: SafeGenerationModelReceipt) => RunBinding
   beforeDispatch?: () => void
   onSnapshot?: (snapshot: MainGenerationSnapshot) => void
@@ -351,17 +362,18 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     preparations.set(preparationId, { binding, knowledgeSnapshot: structuredClone(knowledgeSnapshot) })
     return { preparationId, knowledgeSnapshot: structuredClone(knowledgeSnapshot), selectedDrafts }
   }
-  const begin = (selection: (BeginGenerationRequest | AgentBeginSelection) & { editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; legacyRosterKey?: string }, batchInitialization = false, agentInitialization = false, editorInitialization = false, finalizationInitialization = false, graphInitialization = false, legacyInitialization = false): MainGenerationRunView => {
+  const begin = (selection: (BeginGenerationRequest | AgentBeginSelection) & { editorInlineInput?: EditorInlineInput; finalizationGenerationSlot?: FinalizationGenerationSlot; graphGenerationInput?: GraphGenerationInput; graphGenerationKey?: string; blueprintNextInput?: BlueprintNextInput; blueprintNextKey?: string; legacyRosterKey?: string }, batchInitialization = false, agentInitialization = false, editorInitialization = false, finalizationInitialization = false, graphInitialization = false, legacyInitialization = false, blueprintNextInitialization = false): MainGenerationRunView => {
     assertCurrent()
     if (!selection || typeof selection.operation !== 'string' || !/^[a-z0-9][a-z0-9:_-]{0,127}$/u.test(selection.operation)
       || !Array.isArray(selection.promptKeys) || selection.promptKeys.length === 0
       || Object.hasOwn(selection, 'parentRootActionId') && (typeof selection.parentRootActionId !== 'string' || !selection.parentRootActionId.trim())
       || typeof selection.uiActionNonce !== 'string' || !selection.uiActionNonce.trim() || selection.uiActionNonce.length > 256
-      || Object.keys(selection).some(key => !['operation', 'uiActionNonce', 'modelId', 'chapterNumber', 'selectedDraftIds', 'selectedFinalizedDraftIds', 'selectedBlueprintChapterNumbers', 'promptKeys', 'skillStages', 'authorInputs', 'output', 'outputOverrides', 'parentRootActionId', 'continueDirectoryOperationId', 'batchId', 'batchIntent', 'preparationId', 'finalizedCharacterContextId', 'reviewRevisionContextId', 'agentWorkflowRegistrationId', 'materialDecision', 'importSlot', 'importExecution', ...(agentInitialization ? ['agentInput', 'agentSession'] : []), ...(editorInitialization ? ['editorInlineInput'] : []), ...(finalizationInitialization ? ['finalizationGenerationSlot'] : []), ...(graphInitialization ? ['graphGenerationInput', 'graphGenerationKey'] : []), ...(legacyInitialization ? ['legacyRosterKey'] : [])].includes(key))) throw new Error('GENERATION_BEGIN_INVALID')
+      || Object.keys(selection).some(key => !['operation', 'uiActionNonce', 'modelId', 'chapterNumber', 'selectedDraftIds', 'selectedFinalizedDraftIds', 'selectedBlueprintChapterNumbers', 'promptKeys', 'skillStages', 'authorInputs', 'output', 'outputOverrides', 'parentRootActionId', 'continueDirectoryOperationId', 'batchId', 'batchIntent', 'preparationId', 'finalizedCharacterContextId', 'reviewRevisionContextId', 'agentWorkflowRegistrationId', 'materialDecision', 'importSlot', 'importExecution', ...(agentInitialization ? ['agentInput', 'agentSession'] : []), ...(editorInitialization ? ['editorInlineInput'] : []), ...(finalizationInitialization ? ['finalizationGenerationSlot'] : []), ...(graphInitialization ? ['graphGenerationInput', 'graphGenerationKey'] : []), ...(legacyInitialization ? ['legacyRosterKey'] : []), ...(blueprintNextInitialization ? ['blueprintNextInput', 'blueprintNextKey'] : [])].includes(key))) throw new Error('GENERATION_BEGIN_INVALID')
     if (selection.operation === 'editor-inline' && !editorInitialization) throw new Error('GENERATION_EDITOR_ADMISSION_REQUIRED')
     if (['finalized-chapter-notes', 'finalized-character-state'].includes(selection.operation) && !finalizationInitialization) throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
     if (Object.values(graphOperations).includes(selection.operation as typeof graphOperations[keyof typeof graphOperations]) && !graphInitialization) throw new Error('GENERATION_GRAPH_ADMISSION_REQUIRED')
     if (selection.operation === 'legacy-character-roster-repair' && !legacyInitialization) throw new Error('GENERATION_LEGACY_ADMISSION_REQUIRED')
+    if (selection.operation === 'blueprint-next-options' && !blueprintNextInitialization) throw new Error('GENERATION_BLUEPRINT_NEXT_ADMISSION_REQUIRED')
     const importAdmission = imports.admit(selection)
     if (importAdmission?.existing) return viewOf(importAdmission.existing)
     if (importAdmission) selection = { ...selection, uiActionNonce: `import:${importGenerationSlotKey(selection.importSlot!)}`,
@@ -371,6 +383,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (selection.parentRootActionId && repository.budget(selection.parentRootActionId).root.operation === 'editor-inline') throw new Error('GENERATION_EDITOR_CHILD_FORBIDDEN')
     if (selection.parentRootActionId && Object.values(graphOperations).includes(repository.budget(selection.parentRootActionId).root.operation as typeof graphOperations[keyof typeof graphOperations])) throw new Error('GENERATION_GRAPH_CHILD_FORBIDDEN')
     if (selection.parentRootActionId && repository.budget(selection.parentRootActionId).root.operation === 'legacy-character-roster-repair') throw new Error('GENERATION_LEGACY_CHILD_FORBIDDEN')
+    if (selection.parentRootActionId && repository.budget(selection.parentRootActionId).root.operation === 'blueprint-next-options') throw new Error('GENERATION_BLUEPRINT_NEXT_CHILD_FORBIDDEN')
     if (agentWorkflow?.existing) return viewOf(repository.get(agentWorkflow.existing.runId))
     generationOutputContract(selection)
     const finalizedCharacterContextHash = finalizedCharacters.admit(selection)
@@ -501,7 +514,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     return { outcome: finishReason === 'stop' ? { status: 'completed', content, finishReason, receipt: details }
       : { status: 'incomplete', content, finishReason, receipt: details }, run: viewOf(repository.get(receipt.run.runId)) }
   }
-  const execute = async (request: ExecuteGenerationRequest, agentExecution = false, importExecution = false, editorExecution = false, finalizationExecution = false, graphExecution = false, legacyExecution = false, shortOutlineRetryAttemptId?: string): Promise<MainGenerationExecuteReceipt> => {
+  const execute = async (request: ExecuteGenerationRequest, agentExecution = false, importExecution = false, editorExecution = false, finalizationExecution = false, graphExecution = false, legacyExecution = false, blueprintNextExecution = false, shortOutlineRetryAttemptId?: string): Promise<MainGenerationExecuteReceipt> => {
     const run = requireRun(request.handle, true)
     if (run.binding.sourceManifest.operation === 'agent-round' && !agentExecution) throw new Error('GENERATION_AGENT_ADMISSION_REQUIRED')
     if (run.binding.sourceManifest.importSlot && !importExecution) throw new Error('GENERATION_IMPORT_ADMISSION_REQUIRED')
@@ -509,6 +522,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     if (['finalized-chapter-notes', 'finalized-character-state'].includes(run.binding.sourceManifest.operation as string) && !finalizationExecution) throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
     if (Object.values(graphOperations).includes(run.binding.sourceManifest.operation as typeof graphOperations[keyof typeof graphOperations]) && !graphExecution) throw new Error('GENERATION_GRAPH_ADMISSION_REQUIRED')
     if (run.binding.sourceManifest.operation === 'legacy-character-roster-repair' && !legacyExecution) throw new Error('GENERATION_LEGACY_ADMISSION_REQUIRED')
+    if (run.binding.sourceManifest.operation === 'blueprint-next-options' && !blueprintNextExecution) throw new Error('GENERATION_BLUEPRINT_NEXT_ADMISSION_REQUIRED')
     assertSemanticGenerationTask(request.task)
     const task = structuredClone(request.task)
     if (['generate-plot-outline', 'chapter-blueprint-directory'].includes(String(run.binding.sourceManifest.operation))
@@ -623,7 +637,7 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     const run = requireRun(request.handle, true)
     const task = readFailedShortOutlineTask(run, request.failedAttemptId)
     return execute({ handle: request.handle, invocationNonce: `draft-short-outline-retry:${request.failedAttemptId}`, task },
-      false, false, false, false, false, false, request.failedAttemptId)
+      false, false, false, false, false, false, false, request.failedAttemptId)
   }
   const resume = async (handle: MainGenerationRunHandle) => {
     const run = requireRun(handle)
@@ -939,6 +953,44 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
     try { current = repository.budget(run.rootActionId).root.status !== 'cancelled' && compareGenerationSourceBindings(run.binding, deps.rebuildBinding(run.binding, currentModelReceipt(run.binding))) } catch { /* Original text remains readable after source or model changes. */ }
     return { view: viewOf(run), modelId: modelReceipt(run.binding).modelId, context, sourceStatus: current ? 'current' : 'conflict' }
   }
+  const requireBlueprintNextRun = (handle: MainGenerationRunHandle) => {
+    assertCurrent()
+    if (!handle || Object.keys(handle).some(key => !['projectId', 'epoch', 'rootActionId', 'runId'].includes(key))
+      || handle.projectId !== deps.projectId || typeof handle.epoch !== 'string' || !handle.epoch) throw new Error('GENERATION_RUN_IDENTITY_MISMATCH')
+    const run = repository.get(handle.runId)
+    readBlueprintNextContext(run)
+    if (run.binding.projectId !== handle.projectId || run.rootActionId !== handle.rootActionId
+      || handle.epoch !== run.binding.epoch && handle.epoch !== run.binding.sourceManifest.blueprintNextOriginEpoch) {
+      throw new Error('GENERATION_RUN_IDENTITY_MISMATCH')
+    }
+    return run
+  }
+  const readBlueprintNextRecovery = (handle: MainGenerationRunHandle): BlueprintNextRecovery => {
+    const run = requireBlueprintNextRun(handle)
+    const context = readBlueprintNextContext(run)
+    const attempts = deps.database.prepare('SELECT attempt_id FROM generation_attempts WHERE run_id=? ORDER BY rowid').all(run.runId) as { attempt_id: string }[]
+    if (attempts.length > 1) throw new Error('GENERATION_BLUEPRINT_NEXT_ATTEMPT_CONFLICT')
+    let options: BlueprintNextRecovery['options']
+    if (attempts[0]) {
+      const artifact = repository.receipt(attempts[0].attempt_id).artifact
+      if (artifact?.text) {
+        try { options = parseBlueprintNextResult(run, artifact.text) } catch { /* Keep recovery readable when raw output is invalid. */ }
+      }
+    }
+    let current = false
+    try {
+      current = repository.budget(run.rootActionId).root.status !== 'cancelled'
+        && compareGenerationSourceBindings(run.binding, deps.rebuildBinding(run.binding, currentModelReceipt(run.binding)))
+    } catch { /* Historical options remain readable after source or model changes. */ }
+    return {
+      view: viewOf(run),
+      modelId: modelReceipt(run.binding).modelId,
+      context,
+      attemptCount: attempts.length,
+      sourceStatus: current ? 'current' : 'conflict',
+      ...(options ? { options } : {}),
+    }
+  }
   const finalizationRecovery = (run: DurableGenerationRun): FinalizationGenerationRecovery => {
     assertCurrent()
     const context = readFinalizationGenerationContext(run), effect = finalizations.readEffect(run)
@@ -1239,6 +1291,58 @@ export function createMainGenerationOwner(deps: MainGenerationOwnerDependencies)
       return viewOf(repository.get(run.runId))
     },
     readEditorInlineRecovery,
+    readBlueprintNextRecovery,
+    cancelBlueprintNext: (handle: MainGenerationRunHandle) => {
+      const run = requireBlueprintNextRun(handle)
+      service.cancel(run.rootActionId)
+      return viewOf(repository.get(run.runId))
+    },
+    beginBlueprintNext: (request: BlueprintNextOptionsChannels['blueprint-next:begin']['args'][0]) => {
+      assertCurrent()
+      if (!request || Object.keys(request).some(key => !['input', 'modelId', 'uiActionNonce'].includes(key))
+        || typeof request.uiActionNonce !== 'string' || !request.uiActionNonce.trim() || request.uiActionNonce.length > 256) {
+        throw new Error('GENERATION_BLUEPRINT_NEXT_INPUT_INVALID')
+      }
+      const input = validateBlueprintNextInput(request.input)
+      const rows = deps.database.prepare("SELECT r.run_id FROM generation_runs r JOIN generation_roots g ON g.root_action_id=r.root_action_id WHERE json_extract(g.action_json,'$.operation')='blueprint-next-options' AND json_extract(g.action_json,'$.projectId')=? AND json_extract(g.action_json,'$.uiActionNonce')=?").all(deps.projectId, request.uiActionNonce) as { run_id: string }[]
+      if (rows.length > 1) throw new Error('GENERATION_NONCE_CONFLICT')
+      if (rows[0]) {
+        const prior = repository.get(rows[0].run_id)
+        if (!isDeepStrictEqual(input, prior.binding.sourceManifest.blueprintNextInput) || request.modelId !== modelReceipt(prior.binding).modelId) {
+          throw new Error('GENERATION_NONCE_CONFLICT')
+        }
+        return readBlueprintNextRecovery(handleOf(prior))
+      }
+      const view = begin({
+        operation: 'blueprint-next-options',
+        uiActionNonce: request.uiActionNonce,
+        modelId: request.modelId,
+        selectedDraftIds: [],
+        selectedFinalizedDraftIds: [],
+        promptKeys: ['blueprint-next'],
+        skillStages: [],
+        output: 'structured-data',
+        blueprintNextInput: input,
+        blueprintNextKey: randomUUID(),
+      }, false, false, false, false, false, false, true)
+      return readBlueprintNextRecovery(view.handle)
+    },
+    executeBlueprintNext: async (handle: MainGenerationRunHandle) => {
+      const run = requireBlueprintNextRun(handle)
+      const task = readBlueprintNextTask(run)
+      const invocationNonce = 'blueprint-next:0'
+      const requestHash = textHash(JSON.stringify([task, run.binding.fingerprint.modelLeaseRevision, run.binding.fingerprint.policyHash]))
+      const prior = repository.findInvocation(run.runId, invocationNonce, requestHash)
+      if (prior) {
+        const running = pending.get(JSON.stringify([run.runId, invocationNonce]))
+        return running ? running.promise : outcomeOf(volatileReceipts.get(prior.attempt.attemptId) ?? prior, task)
+      }
+      if (deps.database.prepare('SELECT COUNT(*) FROM generation_attempts WHERE run_id=?').pluck().get(run.runId) !== 0) {
+        throw new Error('GENERATION_BLUEPRINT_NEXT_ATTEMPT_CONFLICT')
+      }
+      const current = viewOf(run).nonReplayable ? await resume(handleOf(run)) : viewOf(run)
+      return execute({ handle: current.handle, invocationNonce, task }, false, false, false, false, false, false, true)
+    },
     cancelEditorInline: (handle: MainGenerationRunHandle) => {
       const run = requireEditorInlineRun(handle)
       service.cancel(run.rootActionId)
