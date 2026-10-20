@@ -707,6 +707,56 @@ export interface AppDataChannels {
     args: [name: string]
     return: { success: boolean; error?: string }
   }
+  'character-preset:list': {
+    args: []
+    return: { success: true; presets: import('./character-preset').CharacterPresetSummary[] } | { success: false; error: string }
+  }
+  'character-preset:load': {
+    args: [presetId: string]
+    return: { success: true; preset: import('./character-preset').CharacterPresetView } | { success: false; error: string }
+  }
+  'character-preset:create': {
+    args: [fields?: Partial<import('./character-preset').CharacterPresetFields>]
+    return: { success: true; preset: import('./character-preset').CharacterPresetView } | { success: false; error: string }
+  }
+  'character-preset:save-fields': {
+    args: [presetId: string, fields: import('./character-preset').CharacterPresetFields]
+    return: { success: true; preset: import('./character-preset').CharacterPresetView } | { success: false; error: string }
+  }
+  'character-preset:delete': {
+    args: [presetId: string]
+    return: { success: true } | { success: false; error: string }
+  }
+  'character-preset:choose-avatar': {
+    args: [presetId: string]
+    return:
+      | { success: true; cancelled: true }
+      | { success: true; cancelled: false; preset: import('./character-preset').CharacterPresetView }
+      | { success: false; error: string }
+  }
+  'character-preset:clear-avatar': {
+    args: [presetId: string]
+    return: { success: true; preset: import('./character-preset').CharacterPresetView } | { success: false; error: string }
+  }
+  'character-preset:choose-portraits-add': {
+    args: [presetId: string]
+    return:
+      | { success: true; cancelled: true }
+      | { success: true; cancelled: false; preset: import('./character-preset').CharacterPresetView }
+      | { success: false; error: string }
+  }
+  'character-preset:remove-portrait': {
+    args: [presetId: string, portraitId: string]
+    return: { success: true; preset: import('./character-preset').CharacterPresetView } | { success: false; error: string }
+  }
+}
+
+/** Project-scoped: copy preset images into an existing roster character. */
+export interface CharacterPresetProjectChannels {
+  'character-preset:apply-assets': {
+    args: [presetId: string, characterId: string]
+    return: { success: true } | { success: false; error: string }
+  }
 }
 
 export interface LLMRequest {
@@ -1323,7 +1373,7 @@ export interface MCPChannels {
 }
 
 // ===== 合并所有频道 =====
-export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
+export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
 export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */

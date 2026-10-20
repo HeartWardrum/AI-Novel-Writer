@@ -20,6 +20,7 @@
 @import './blueprint/blueprint.css';
 @import './write/write-popover.css';
 @import './chapter/chapter.css';
+@import './reference/reference-float.css';
 @import './history/history.css';
 @import './knowledge/knowledge.css';
 @import './plot/plot.css';

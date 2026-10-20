@@ -16,6 +16,7 @@ import { LibraryUpdateCard } from '../StageUpdate'
 import { useModelMissing } from '../use-model-missing'
 import { useStageView } from '../use-stage-work'
 import BookOverview from './BookOverview'
+import CharacterPresetsPanel from './CharacterPresetsPanel'
 import ShelfBook from './ShelfBook'
 import { shelfTime } from './shelf-format'
 import { barsFromOverview, barsFromStages, nextStep } from './shelf-progress'
@@ -93,6 +94,7 @@ function EmptyLibrary({ modelMissing }: { modelMissing: boolean }) {
         {modelMissing && <ModelMissingNotice />}
         <LibraryUpdateCard />
       </div>
+      <CharacterPresetsPanel />
     </div>
   )
 }
@@ -191,6 +193,7 @@ export default function StageLibrary() {
         </header>
         <StartActions />
         <LegacyImportNotice />
+        <CharacterPresetsPanel />
         {!waiting && <section className="stage-shelf" aria-labelledby="stage-shelf-title">
           <div className="stage-shelf-head">
             <h2 id="stage-shelf-title" className="stage-shelf-title">{text('书架', 'Shelf')}</h2>

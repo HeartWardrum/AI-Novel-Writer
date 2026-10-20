@@ -19,6 +19,7 @@ import { paletteItem, type PaletteItem } from './palette-filter'
 import StageSpine from './StageSpine'
 import StageTopBar from './StageTopBar'
 import StageWorkspace from './StageWorkspace'
+import ReferenceFloatLayer from './reference/ReferenceFloatLayer'
 import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES, STAGE_NAMES, stageTabName } from './stage-text'
 import { refreshStageWork, useLandingPage, useStageView, useStageWorkRefresh, type StageView } from './use-stage-work'
 import { useStageShortcuts } from './use-stage-shortcuts'
@@ -176,6 +177,7 @@ export default function StageShell({ theme }: { theme: Theme }) {
       <StagePalette mode={palette} items={paletteItems} container={root} onClose={() => useStageStore.setState({ palette: null })} />
       <ClearProjectDataDialog open={clearOpen} onClose={() => setClearOpen(false)} onCleared={() => refreshStageWork(text)} />
       <NewWorkDialog />
+      <ReferenceFloatLayer />
     </div>
   )
 }

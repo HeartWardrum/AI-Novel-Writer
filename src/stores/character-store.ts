@@ -223,6 +223,8 @@ interface CharacterState {
   setSelectedId: (id: string | null) => void
   setSelectedName: (name: string | null) => void
   addCharacter: () => void
+  /** Import global presets into the current project roster, then copy images. */
+  importFromPresets: (presetIds: readonly string[]) => Promise<number>
   deleteCharacter: (
     name: string,
     projectPath?: string,
@@ -243,7 +245,7 @@ interface CharacterState {
     projectPath?: string,
     expectedProjectSession?: ProjectSessionContext,
     operationKind?: 'delete',
-  ) => Promise<void>
+  ) => Promise<{ created: { selectionKey: string; characterId: string }[] }>
 
   // 兼容旧接口
   loadCharacters: (projectPath: string, expectedProjectSession?: ProjectSessionContext) => Promise<void>
@@ -496,6 +498,84 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     ))
   },
 
+  importFromPresets: async (presetIds) => {
+    const projectSession = currentCharacterProjectSession()
+    if (!projectSession) throw new Error('缺少当前项目会话')
+    if (
+      characterIdentityMutationInFlight
+      && sameProjectSessionContext(characterIdentityMutationInFlight.projectSession, projectSession)
+    ) {
+      throw new Error('角色身份操作正在进行，请稍后再导入')
+    }
+    const state = get()
+    if (
+      !sameProjectSessionContext(state.dataProjectSession, projectSession)
+      || state.loadingProjectSession !== null
+      || state.lastError !== null
+    ) {
+      throw new Error('角色数据尚未就绪')
+    }
+    const uniqueIds = [...new Set(presetIds.map(id => id.trim()).filter(Boolean))]
+    if (uniqueIds.length === 0) return 0
+
+    const loaded: { presetId: string; card: CharacterCard }[] = []
+    for (const presetId of uniqueIds) {
+      const result = await ipc.invoke('character-preset:load', presetId)
+      if (!result.success) throw new Error(result.error)
+      const draftId = `draft:${randomUUID()}`
+      loaded.push({
+        presetId,
+        card: {
+          ...EMPTY_CARD,
+          ...result.preset.fields,
+          characterId: draftId,
+          name: result.preset.fields.name.trim() || `预制_${presetId.slice(-6)}`,
+        },
+      })
+    }
+
+    const projectKey = projectSession.projectPath
+    const before = get().characters
+    const draftIds = loaded.map(item => item.card.characterId!)
+    set(current => ({
+      characters: [...current.characters, ...loaded.map(item => item.card)],
+      selectedId: draftIds[0] ?? current.selectedId,
+      selectedName: loaded[0]?.card.name ?? current.selectedName,
+    }))
+    persistCharacterDraftLedger(recordProjectEditorEdit(
+      readCharacterDraftLedger(projectKey),
+      projectKey,
+      before,
+      get().characters,
+    ))
+
+    const { created } = await get().saveAll(projectKey, projectSession)
+    const createdIds = new Map(created.map(item => [item.selectionKey, item.characterId]))
+    const createdByPreset = loaded.flatMap(item => {
+      const characterId = createdIds.get(item.card.characterId!)
+      return characterId ? [[item.presetId, characterId] as const] : []
+    })
+
+    for (const [presetId, characterId] of createdByPreset) {
+      if (!isCharacterProjectSessionCurrent(projectSession)) return loaded.length
+      const applied = await ipc.invokeWithProjectSession(
+        projectSession,
+        'character-preset:apply-assets',
+        presetId,
+        characterId,
+      )
+      if (!applied.success) {
+        const text = useLocaleStore.getState().text
+        throw new Error(text(
+          `角色已导入，但图片未能写入：${applied.error}`,
+          `Characters were imported, but images could not be copied: ${applied.error}`,
+        ))
+      }
+      characterAvatarChanges.dispatchEvent(new CustomEvent('changed', { detail: { context: projectSession, characterId } }))
+    }
+    return loaded.length
+  },
+
   deleteCharacter: (name, projectPath, expectedProjectSession) => {
     const projectSession = currentCharacterProjectSession(projectPath, expectedProjectSession)
     if (!projectSession) return Promise.resolve(false)
@@ -702,7 +782,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     const saveKind: SessionOperation<void>['kind'] = operationKind
       ?? (savedRenames.length > 0 ? 'rename' : 'save')
 
-    const save = async () => {
+    const save = async (): Promise<{ created: { selectionKey: string; characterId: string }[] }> => {
       // 角色主键改名、删除、蓝图结构化引用、角色图谱、revision 和 receipt
       // 都由主进程 roster seam 在同一事务内完成。
       const payload = {
@@ -712,19 +792,20 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       }
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ projectSession, payload })))
       const operationId = `manual-character-save-${Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('')}`
-      if (!isCharacterProjectSessionCurrent(projectSession)) return
+      if (!isCharacterProjectSessionCurrent(projectSession)) return { created: [] }
       const result = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-commit', { ...payload, operationId }, projectKey)
       if (!result.success || !result.receipt) {
         throw new Error(result.error ?? '角色卡保存失败')
       }
-      if (!isCharacterProjectSessionCurrent(projectSession)) return
+      if (!isCharacterProjectSessionCurrent(projectSession)) return { created: [] }
       const savedRosterCards = result.receipt.snapshot.entries.map(characterCardFromRosterEntry)
       const ledger = readCharacterDraftLedger(projectKey)
       const currentProjectDraft = getProjectEditorDraft(ledger, projectKey)
       const projectSaveInputStillCurrent = (
         !currentProjectDraft || valuesMatch(currentProjectDraft.draftValue, characters)
       )
-      const createdIds = new Map((result.receipt.created ?? []).map(item => [item.selectionKey, item.characterId]))
+      const created = result.receipt.created ?? []
+      const createdIds = new Map(created.map(item => [item.selectionKey, item.characterId]))
       const remapCreated = (card: CharacterCard): CharacterCard => {
         let relationships = card.relationships
         try {
@@ -745,7 +826,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         currentValue,
       )
       settledLedger = setCharacterDraftRenames(settledLedger, projectKey, remainingRenames)
-      if (!isCharacterProjectSessionCurrent(projectSession)) return
+      if (!isCharacterProjectSessionCurrent(projectSession)) return { created: [] }
       persistCharacterDraftLedger(settledLedger)
 
       if (
@@ -767,6 +848,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
         set({ characters: currentValue, selectedId: createdIds.get(get().selectedId ?? '') ?? get().selectedId, rosterRevision: result.receipt.revision, identityRevision: result.receipt.snapshot.identityRevision ?? null })
       }
       await get().commitAvatarDrafts(projectSession)
+      return { created }
     }
     const trackedSave = save().finally(() => {
       if (characterSaveInFlight?.promise === trackedSave) {

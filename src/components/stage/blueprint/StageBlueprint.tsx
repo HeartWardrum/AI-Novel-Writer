@@ -6,6 +6,8 @@ import { openPlanningRecoveryDraft } from '../../../stores/editor-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { isCurrentProjectSession, currentProjectSessionForPath, useChapterBlueprints } from '../../editor/use-chapter-blueprints'
+import { captureProjectSession } from '../../project-session-gate'
+import { useProjectStore } from '../../../stores/project-store'
 import { Button } from '../../ui/Button'
 import { DangerConfirm } from '../../ui/DangerConfirm'
 import { EmptyState } from '../../ui/EmptyState'
@@ -14,6 +16,7 @@ import { Notice } from '../../ui/Notice'
 import { InkDialog } from '../InkDialog'
 import { useStageView } from '../use-stage-work'
 import WriteChapterPopover from '../write/WriteChapterPopover'
+import { openWritingReferences } from '../reference/open-writing-references'
 import BatchWriteDialog from './BatchWriteDialog'
 import BlueprintCard from './BlueprintCard'
 import BlueprintPlanList from './BlueprintPlanList'
@@ -42,6 +45,7 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
   const writeRequest = useStageStore(s => s.writeRequest)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [refsBusy, setRefsBusy] = useState(false)
   const [ask, setAsk] = useState<Ask | null>(null)
 
   const next = plan.nextWritableBlueprint
@@ -82,6 +86,22 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
     const session = currentProjectSessionForPath(projectKey)
     if (plan.planningRecovery && session && isCurrentProjectSession(session)) {
       openPlanningRecoveryDraft(plan.planningRecovery, projectKey, text('蓝图恢复稿', 'Blueprint recovery draft'))
+    }
+  }
+
+  const openChapterReferences = async () => {
+    if (!selected) return
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
+    if (!session || !isCurrentProjectSession(session)) return
+    setRefsBusy(true)
+    try {
+      await openWritingReferences({
+        session,
+        chapterNumber: selected.chapterNumber,
+        characterNames: selected.characters,
+      })
+    } finally {
+      setRefsBusy(false)
     }
   }
 
@@ -139,6 +159,15 @@ export default function StageBlueprint({ projectKey, initialChapterNumber, selec
               ] },
             ]}
           />
+          {selected && (
+            <Button
+              variant="secondary"
+              disabled={!plan.projectDataReady || refsBusy}
+              onClick={() => void openChapterReferences()}
+            >
+              {text('打开参考图', 'Open references')}
+            </Button>
+          )}
           {count > 0 && generateButton}
           {next && (
             <Button variant="secondary" onClick={() => setBatchOpen(true)}>

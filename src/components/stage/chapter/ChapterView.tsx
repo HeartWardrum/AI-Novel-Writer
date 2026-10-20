@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { countDraftUnits } from '../../../shared/draft-units'
 import { formatResourceUri } from '../../../shared/project-paths'
 import type { EditorTab } from '../../../stores/editor-store'
 import { readDraftBody } from '../../../stores/draft-store'
+import { useCharacterStore } from '../../../stores/character-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore } from '../../../stores/navigation/stage-store'
@@ -117,6 +118,13 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
         : stage === 'revised' ? text(`修稿已合并 v${draft.meta.version} · ${units} 字`, `Revised v${draft.meta.version} · ${units} ${pluralEn(charCount, 'word')}`)
           : text(`草稿 v${draft.meta.version} · ${units} 字`, `Draft v${draft.meta.version} · ${units} ${pluralEn(charCount, 'word')}`)
   const editable = !draft.isReadonly && !draft.isChapterBusy
+  const characters = useCharacterStore(s => s.characters)
+  const characterNameEntries = useMemo(
+    () => characters
+      .filter(card => Boolean(card.characterId?.trim() && card.name.trim()))
+      .map(card => ({ characterId: card.characterId!.trim(), name: card.name.trim() })),
+    [characters],
+  )
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
@@ -162,6 +170,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 chapterNumber={chapterNumber}
                 editable={editable}
                 hideStatusBar
+                characterNameEntries={characterNameEntries}
                 onCharCountChange={setCharCount}
                 onChange={draft.onBodyChange}
                 onSave={body => draft.save(body)}

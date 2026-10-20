@@ -196,7 +196,7 @@ describe('character store project context', () => {
     })
 
     useCharacterStore.getState().updateField('id:A 角色', 'notes', 'A 本地修改')
-    await expect(useCharacterStore.getState().saveAll(PROJECT_A)).resolves.toBeUndefined()
+    await expect(useCharacterStore.getState().saveAll(PROJECT_A)).resolves.toEqual({ created: [] })
     expect(invoke).toHaveBeenNthCalledWith(
       2,
       'db:character-roster-commit',

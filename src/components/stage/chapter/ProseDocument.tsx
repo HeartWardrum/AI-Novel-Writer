@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ipc } from '../../../services/ipc-client'
 import type { ProjectData } from '../../../shared/ipc-channels'
 import { pluralEn } from '../../../shared/plural-en'
+import { useCharacterStore } from '../../../stores/character-store'
 import { registerEditorExitSaveHandler, useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import CodeMirrorEditor from '../../editor/CodeMirrorEditor'
@@ -23,6 +24,13 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
   const [units, setUnits] = useState(0)
   const [saving, setSaving] = useState(false)
   const latest = useRef(tab.content ?? '')
+  const characters = useCharacterStore(s => s.characters)
+  const characterNameEntries = useMemo(
+    () => characters
+      .filter(card => Boolean(card.characterId?.trim() && card.name.trim()))
+      .map(card => ({ characterId: card.characterId!.trim(), name: card.name.trim() })),
+    [characters],
+  )
 
   const persist = useCallback(async (content: string) => {
     const session = captureProjectSession(project)
@@ -92,6 +100,7 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
               filePath={tab.filePath}
               editable={recovery}
               hideStatusBar
+              characterNameEntries={characterNameEntries}
               onCharCountChange={setUnits}
               onChange={value => {
                 if (!recovery) return

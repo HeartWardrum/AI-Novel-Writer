@@ -1,0 +1,85 @@
+/* 写作参考小窗：盖住舞台与侧页，不进滚动裁切 */
+.ref-float-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12000;
+}
+
+.ref-float-window {
+  position: fixed;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  border: 1px solid var(--rule);
+  user-select: none;
+  touch-action: none;
+}
+
+.ref-float-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: grab;
+  min-width: 0;
+}
+
+.ref-float-window:active .ref-float-head {
+  cursor: grabbing;
+}
+
+.ref-float-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ref-float-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.ref-float-close:hover,
+.ref-float-close:focus-visible {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.ref-float-body {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--paper-2);
+}
+
+.ref-float-body img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(420px, 55vh);
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.ref-float-kind {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}

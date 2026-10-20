@@ -33,6 +33,7 @@ function isCapabilityOrAppDataChannel(channel: string): boolean {
     || channel.startsWith('dialog:select-')
     || channel.startsWith('prompt:')
     || channel.startsWith('skills:')
+    || (channel.startsWith('character-preset:') && channel !== 'character-preset:apply-assets')
 }
 
 function isProjectScopedChannel(channel: string): boolean {
@@ -41,6 +42,8 @@ function isProjectScopedChannel(channel: string): boolean {
     || channel.startsWith('character-proposal:')
     || channel.startsWith('character-identity:')
     || channel.startsWith('character-avatar:')
+    || channel.startsWith('character-portrait:')
+    || channel === 'character-preset:apply-assets'
     || channel.startsWith('finalized-character:')
     || channel.startsWith('finalization-generation:')
     || channel.startsWith('graph-generation:')

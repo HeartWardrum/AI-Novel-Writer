@@ -29,6 +29,9 @@ import { isProjectSessionCurrent } from '../project-session-gate'
 import { ipc } from '../../services/ipc-client'
 import { Check } from '../ui/Check'
 import { livePreview, paperHeadFacet, type PaperHead } from './live-preview'
+import { characterNameHighlight } from './character-name-highlight'
+import CharacterNameBubble from './CharacterNameBubble'
+import type { CharacterNameEntry } from '../../shared/character-name-match'
 
 export type CodeMirrorEditorProps = {
   content: string
@@ -49,6 +52,8 @@ export type CodeMirrorEditorProps = {
   fitContent?: boolean
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
+  /** 角色名单正式名（不含别名）；prose 下高亮并可点开迷你档案。 */
+  characterNameEntries?: readonly CharacterNameEntry[]
 }
 
 const DEFAULT_REWRITE_CONTEXT: EditorInlineContextOptions = {
@@ -111,6 +116,7 @@ export default function CodeMirrorEditor({
   paperHead = null,
   fitContent = false,
   paragraphIndent: indentParagraphs = false,
+  characterNameEntries,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
   const uiText = useLocaleStore(s => s.text)
@@ -173,11 +179,32 @@ export default function CodeMirrorEditor({
   // ===== Bubble Menu 逻辑 =====
   const [bubbleOpen, setBubbleOpen] = useState(false)
   const [bubblePos, setBubblePos] = useState({ top: 0, left: 0 })
+  const [nameBubble, setNameBubble] = useState<{
+    name: string
+    characterIds: string[]
+    top: number
+    left: number
+  } | null>(null)
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
   const [loadingDots, setLoadingDots] = useState('.')
   const [selectionRange, setSelectionRange] = useState<{ from: number, to: number } | null>(null)
+  const nameActivateRef = useRef<(info: {
+    name: string
+    characterIds: readonly string[]
+    rect: DOMRect
+  }) => void>(() => undefined)
+  nameActivateRef.current = (info) => {
+    setBubbleOpen(false)
+    setSelectionRange(null)
+    setNameBubble({
+      name: info.name,
+      characterIds: [...info.characterIds],
+      top: info.rect.top,
+      left: info.rect.left + info.rect.width / 2,
+    })
+  }
   const [rewriteAsk, setRewriteAsk] = useState(false)
   const [rewritePrompt, setRewritePrompt] = useState('')
   const [rewriteModelId, setRewriteModelId] = useState<string | null>(null)
@@ -278,6 +305,7 @@ export default function CodeMirrorEditor({
         // 局部重写对话框打开时保留冻结选区，避免焦点离开正文后丢掉目标。
         if (aiResult === null && !rewriteAskRef.current) { setBubbleOpen(false); setSelectionRange(null) }
       } else {
+        setNameBubble(null)
         setSelectionRange({ from: sel.from, to: sel.to })
         // 交由下方的 useEffect 进行精准防越界座标计算与位置同步
         if (!aiResult && !rewriteAskRef.current) {
@@ -348,6 +376,25 @@ export default function CodeMirrorEditor({
       if (rafId) cancelAnimationFrame(rafId)
     }
   }, [bubbleOpen, selectionRange, fitContent])
+
+  useEffect(() => {
+    if (!nameBubble) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNameBubble(null)
+    }
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('.cm-namebubble') || target.closest('.cm-character-name')) return
+      setNameBubble(null)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onPointer, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onPointer, true)
+    }
+  }, [nameBubble])
 
   // 主题配置
   const cmTheme = useMemo(() => EditorView.theme({
@@ -454,10 +501,13 @@ export default function CodeMirrorEditor({
       }))
     }
     if (mode === 'prose') exts.push(...livePreview())
+    if (mode === 'prose' && characterNameEntries?.length) {
+      exts.push(characterNameHighlight(characterNameEntries, info => nameActivateRef.current(info)))
+    }
     if (indentParagraphs) exts.push(paragraphIndent)
     exts.push(paperHeadFacet.of(stablePaperHead))
     return exts
-  }, [mode, stablePaperHead, uiLocale, indentParagraphs])
+  }, [mode, stablePaperHead, uiLocale, indentParagraphs, characterNameEntries])
 
   const openRewriteDialog = () => {
     if (!selectionRange || !editorRef.current?.view || !editable) return
@@ -702,6 +752,18 @@ export default function CodeMirrorEditor({
           />
         </div>
       </div>
+
+      {nameBubble && (
+        <CharacterNameBubble
+          key={`${nameBubble.name}:${nameBubble.characterIds.join('\u0000')}`}
+          name={nameBubble.name}
+          characterIds={nameBubble.characterIds}
+          top={nameBubble.top}
+          left={nameBubble.left}
+          inkThemeName={inkThemeName}
+          onClose={() => setNameBubble(null)}
+        />
+      )}
 
       {/* 选区工具条：纸墨浮层，自带纸墨令牌与深浅色 */}
       {bubbleOpen && (editable || aiResult !== null) && bubblePos.top !== 0 && (

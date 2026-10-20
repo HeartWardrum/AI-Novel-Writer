@@ -3,6 +3,7 @@ import { getCharacterRoleLabels } from '../../../shared/character-role'
 import { characterSelectionKey, useCharacterStore } from '../../../stores/character-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { CharacterCardImportButton } from '../../characters/CharacterCardImportButton'
+import { CharacterPresetImportButton } from '../../characters/CharacterPresetImportButton'
 import { useCharacterList } from '../../characters/use-character-list'
 import { Button } from '../../ui/Button'
 
@@ -37,6 +38,7 @@ export default function CharacterRoster({ projectKey }: { projectKey: string }) 
           <Button variant="secondary" size="sm" disabled={identityBusy || !list.dataReady} onClick={() => useCharacterStore.getState().addCharacter()}>
             <Plus size={14} aria-hidden />{text('新建角色', 'New character')}
           </Button>
+          <CharacterPresetImportButton disabled={identityBusy || !list.dataReady} />
           <CharacterCardImportButton projectKey={projectKey} disabled={identityBusy || !list.dataReady} />
         </div>
       </div>

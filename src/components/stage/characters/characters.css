@@ -143,6 +143,28 @@
   gap: var(--s-2);
 }
 
+.cast-preset-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-height: min(360px, 50vh);
+  overflow: auto;
+}
+
+.cast-preset-import-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cast-preset-import-label small {
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+}
+
 /* 中文两个按钮并排；英文的「Paste / import character cards」放不下时换到下一行，不再挤出按钮。 */
 .cast-roster-actions .pi-btn {
   flex: 1 1 auto;

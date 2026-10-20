@@ -652,3 +652,142 @@
       0 0 0 8px var(--accent);
   }
 }
+
+/* ---------- 预制人物 ---------- */
+.stage-presets {
+  margin: var(--s-8) 0 0;
+}
+
+.stage-presets .stage-shelf-head {
+  flex-wrap: wrap;
+}
+
+.stage-presets-empty,
+.stage-presets-error {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--ink-2);
+}
+
+.stage-presets-error {
+  color: var(--danger);
+  margin-bottom: var(--s-3);
+}
+
+.stage-presets-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  gap: var(--s-3);
+}
+
+.stage-preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-height: 96px;
+  padding: var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-preset-card:hover,
+.stage-preset-card:focus-visible {
+  border-color: var(--rule-strong);
+  background: var(--paper);
+}
+
+.stage-preset-icon {
+  color: var(--ink-3);
+}
+
+.stage-preset-name {
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.stage-preset-meta {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+.stage-preset-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.stage-preset-media {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.stage-preset-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--paper-2);
+  flex: none;
+}
+
+.stage-preset-avatar-empty {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.stage-preset-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.stage-preset-portraits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.stage-preset-portraits li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 72px;
+}
+
+.stage-preset-portraits img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--paper-2);
+}
+
+.stage-preset-portraits button {
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.stage-library-empty .stage-presets {
+  width: min(720px, 100%);
+  margin-top: var(--s-10);
+  text-align: left;
+}

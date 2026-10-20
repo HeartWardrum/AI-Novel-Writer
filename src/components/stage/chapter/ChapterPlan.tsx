@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { blueprintWritePrefill } from '../../../services/workflows/chapter-write-launch'
 import type { EditorTab } from '../../../stores/editor-store'
 import { useLocaleStore } from '../../../stores/locale-store'
@@ -6,11 +6,12 @@ import { navigate } from '../../../stores/navigation/navigation-intents'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { openBuiltinEditor } from '../../../stores/open-builtin-editor'
 import { useProjectStore } from '../../../stores/project-store'
-import { captureProjectSession } from '../../project-session-gate'
+import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { useStageView } from '../use-stage-work'
 import WriteChapterPopover from '../write/WriteChapterPopover'
+import { openWritingReferences } from '../reference/open-writing-references'
 import { openDraftInChapterView, swapChapterTab } from './chapter-tab-routing'
 import ChapterHead from './ChapterHead'
 import DeletionCleanupNotices from './DeletionCleanupNotices'
@@ -45,6 +46,22 @@ export default function ChapterPlan({ tab, chapterNumber, projectKey }: { tab: E
 
   const editBlueprint = () => openBuiltinEditor('chapter-card-editor', text('章节蓝图', 'Chapter blueprint'), 'chapter-card', undefined, chapterNumber)
   const target = wordsPerChapter && wordsPerChapter > 0 ? wordsPerChapter.toLocaleString(locale) : null
+  const [refsBusy, setRefsBusy] = useState(false)
+
+  const openReferences = async () => {
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
+    if (!session || !isProjectSessionCurrent(session) || !blueprint) return
+    setRefsBusy(true)
+    try {
+      await openWritingReferences({
+        session,
+        chapterNumber,
+        characterNames: blueprint.characters,
+      })
+    } finally {
+      setRefsBusy(false)
+    }
+  }
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
@@ -65,6 +82,9 @@ export default function ChapterPlan({ tab, chapterNumber, projectKey }: { tab: E
           {blueprint && (
             <div className="stage-ch-actions">
               <WriteChapterPopover chapterNumber={chapterNumber} blueprint={blueprintWritePrefill(blueprint)} label={text('写作此章', 'Write this chapter')} align="start" />
+              <Button variant="secondary" size="sm" disabled={refsBusy} onClick={() => void openReferences()}>
+                {text('打开参考图', 'Open references')}
+              </Button>
               <span className="stage-ch-hint">
                 {row?.running
                   ? text('这一章正在写，完成后会在这里换成草稿', 'This chapter is being written; the draft replaces this page when it is done')

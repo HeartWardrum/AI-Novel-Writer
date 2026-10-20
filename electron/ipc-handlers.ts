@@ -20,6 +20,7 @@ import { registerExternalFileGrantController } from './controllers/external-file
 import { registerAppDataController } from './controllers/app-data-controller'
 import { registerCharacterAvatarController } from './controllers/character-avatar-controller'
 import { registerCharacterPortraitController } from './controllers/character-portrait-controller'
+import { registerCharacterPresetController } from './controllers/character-preset-controller'
 import { CharacterPortraitService } from './services/character-portrait-service'
 import { CharacterAssetService } from './services/character-asset-service'
 import { projectAccess } from './services/project-access'
@@ -65,6 +66,36 @@ export function registerIPCHandlers() {
   })
   registerCharacterPortraitController({
     resolveService(_event, context) {
+      let active
+      try {
+        active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+      } catch { return null }
+      const database = getProjectDb()
+      if (!database) return null
+      return new CharacterPortraitService({
+        projectId: context.projectId,
+        sessionLease: context.leaseId,
+        storageRoot: getProjectDataRoot(active.rootPath),
+        database,
+      })
+    },
+  })
+  registerCharacterPresetController({
+    resolveAvatarService(context) {
+      let active
+      try {
+        active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+      } catch { return null }
+      const database = getProjectDb()
+      if (!database) return null
+      return new CharacterAssetService({
+        projectId: context.projectId,
+        sessionLease: context.leaseId,
+        storageRoot: getProjectDataRoot(active.rootPath),
+        database,
+      })
+    },
+    resolvePortraitService(context) {
       let active
       try {
         active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())

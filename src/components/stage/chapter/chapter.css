@@ -206,6 +206,16 @@
   text-indent: 2em;
 }
 
+/* 角色名单正式名：显示高亮，点击出迷你档案 */
+.stage-ch .stage-ch-prose .cm-character-name {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, var(--rule-strong));
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+
 .stage-ch-prose[data-readonly] .cm-content {
   cursor: default;
 }
@@ -743,6 +753,135 @@
   .stage-ch-titlerow {
     flex-wrap: wrap;
   }
+}
+
+/* ================= 人名迷你档案气泡 ================= */
+.paper-ink.cm-namebubble {
+  position: fixed;
+  z-index: 51;
+  width: min(280px, calc(100vw - 24px));
+  padding: var(--s-3);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  transform: translate(-50%, calc(-100% - 8px));
+  user-select: none;
+}
+
+.cm-namebubble-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.cm-namebubble-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.cm-namebubble-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  background: var(--paper-2);
+}
+
+.cm-namebubble-avatar-fallback {
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.cm-namebubble-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cm-namebubble-titles strong {
+  font-size: var(--fs-14);
+  color: var(--ink);
+}
+
+.cm-namebubble-titles span {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+.cm-namebubble-fields {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+.cm-namebubble-fields dt {
+  margin: 0;
+  color: var(--ink-3);
+}
+
+.cm-namebubble-fields dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.cm-namebubble-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-1);
+}
+
+.cm-namebubble-empty,
+.cm-namebubble-pick-title {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--ink-2);
+}
+
+.cm-namebubble-candidates {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cm-namebubble-candidate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--s-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cm-namebubble-candidate:hover,
+.cm-namebubble-candidate:focus-visible {
+  background: var(--paper-2);
+}
+
+.cm-namebubble-candidate strong {
+  font-size: var(--fs-13);
+}
+
+.cm-namebubble-candidate span {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
 }
 
 /* ================= 选区工具条（架构文档页的编辑器也用它，自带纸墨作用域） ================= */
