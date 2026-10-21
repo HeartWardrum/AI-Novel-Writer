@@ -129,14 +129,20 @@ describe('directory workflow guard', () => {
   })
 })
 
-describe('chapter workflow guard locale', () => {
-  it('returns the missing-blueprint guard in the frozen English locale', async () => {
-    vi.mocked(ipc.invokeWithProjectSession).mockResolvedValueOnce([])
+describe('chapter workflow guard', () => {
+  it('allows drafting without blueprints or character cards when a project is open', async () => {
+    vi.mocked(ipc.invokeWithProjectSession).mockClear()
+    await expect(guardChapterWriting(1, projectPath, projectSession)).resolves.toEqual({ ok: true })
+    expect(vi.mocked(ipc.invokeWithProjectSession)).not.toHaveBeenCalled()
+  })
+
+  it('returns a missing-project guard in English', async () => {
+    currentProject = null
     useLocaleStore.setState({ locale: 'en-US' })
 
     await expect(guardChapterWriting(1, projectPath, projectSession)).resolves.toMatchObject({
       ok: false,
-      message: expect.stringContaining('No chapter blueprints have been generated'),
+      message: 'Open or create a project first.',
     })
   })
 })

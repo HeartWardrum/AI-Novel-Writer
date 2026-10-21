@@ -70,6 +70,18 @@ export function blueprintWritePrefill(blueprint: ChapterBlueprint): ChapterWrite
   }
 }
 
+/** 无蓝图时的写作预填：只带章标题，其余留空，由作者微操指导与模型补齐。 */
+export function emptyChapterWritePrefill(chapterNumber: number, title?: string): ChapterWritePrefill {
+  return {
+    title: title?.trim() || `第 ${chapterNumber} 章`,
+    role: '',
+    purpose: '',
+    keyEvents: '',
+    characters: '',
+    userGuidance: '',
+  }
+}
+
 /** 从章节蓝图「写作此章」带来的预填参数换成表单值；目标字数取设定里的每章字数，检索关键词留空。 */
 export function chapterWriteFormFromPrefill(prefill: Record<string, unknown>, defaultWordsTarget: number): ChapterWriteForm {
   return {

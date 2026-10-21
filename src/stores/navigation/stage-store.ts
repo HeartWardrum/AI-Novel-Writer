@@ -11,6 +11,18 @@ export type RunSheetTab = 'active' | 'history' | 'diagnostics'
  */
 export type StageSheet = { kind: 'run'; tab: RunSheetTab; runId?: string } | { kind: 'review'; filePath: string }
 
+/** 右栏主表面：对话常驻；运行是子页。 */
+export type RightRailMode = 'chat' | 'run'
+
+/** 写章工作流完成后的整章候选：作者采用后成为当前稿，丢弃则删除该候选版本。 */
+export interface PendingDraftAdopt {
+  session: ProjectSessionContext
+  chapterNumber: number
+  draftId: number
+  version: number
+  runId: string
+}
+
 /** 命令面板：commands 是搜索与跳转（⌘K / Ctrl K），chapters 只查章节（⌘P / Ctrl P）。 */
 export type StagePalette = 'commands' | 'chapters'
 
@@ -25,6 +37,8 @@ export interface StageWork {
 
 interface StageState {
   sheet: StageSheet | null
+  /** 右栏：对话或运行。打开作品默认对话。 */
+  rightRail: RightRailMode
   /** 沉浸写作：只留正文与章节动作条。 */
   focus: boolean
   palette: StagePalette | null
@@ -39,11 +53,14 @@ interface StageState {
   chapterFacts: { session: ProjectSessionContext; byDraft: Readonly<Record<number, ChapterFacts>> } | null
   /** 流程脊为这次打开读完过一遍各稿的审稿与修稿记录。没读完时流程脊不列阶段与章节，章节阶段不会先按稿状态估计再改。 */
   spineFacts: ProjectSessionContext | null
+  /** 写章完成后的整章候选，待作者采用或丢弃。 */
+  pendingDraftAdopt: PendingDraftAdopt | null
 }
 
 /** 外壳的界面状态。书房与作品的切换在 layout-store 的 sidebarView。 */
 export const useStageStore = create<StageState>()(() => ({
   sheet: null,
+  rightRail: 'chat',
   focus: false,
   palette: null,
   work: null,
@@ -52,4 +69,5 @@ export const useStageStore = create<StageState>()(() => ({
   chapterRequest: null,
   chapterFacts: null,
   spineFacts: null,
+  pendingDraftAdopt: null,
 }))

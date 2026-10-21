@@ -104,22 +104,23 @@ export function missingSetup(config: WorkFacts['config']): SetupField[] {
 const begun = (row: ChapterRow) => row.hasFinal || (row.phase !== 'todo' && row.draft?.wordCount !== 0)
 
 /**
- * 四个阶段的状态，顺序固定为设定、架构、蓝图、正文。完成判定按 ia.md：设定必填项齐全，架构四节都有内容，
- * 蓝图至少 1 章（分批规划的作品不会因为没规划完就一直停在蓝图），正文按章统计。
+ * 三个阶段的状态，顺序为设定、架构、正文（蓝图不再作为流程阶段）。
+ * 设定必填项齐全，架构四节都有内容，正文按章统计。
  * 定稿章数与章节列表同源：定稿之后又建了草稿的章按草稿算，不计入定稿。
  */
-export function deriveStages(facts: WorkFacts, chapters: readonly ChapterRow[] = deriveChapters(facts)): StageStatus[] {
+export function deriveStages(
+  facts: WorkFacts,
+  chapters: readonly ChapterRow[] = deriveChapters({ ...facts, totalChapters: facts.config.totalChapters }),
+): StageStatus[] {
   const missing = missingSetup(facts.config)
   const filled = ARCHITECTURE_SECTIONS.filter(section => facts.architecture[section]).length
   const total = Math.max(0, facts.config.totalChapters || 0)
-  const planned = facts.blueprints.length
   const finalized = chapters.filter(row => row.phase === 'final').length
   const started = chapters.some(begun)
   return [
     { stage: 'setup', missing,
       progress: missing.length === 0 ? DONE : { state: 'active', ratio: (SETUP_FIELDS.length - missing.length) / SETUP_FIELDS.length } },
     { stage: 'architecture', filled, total: ARCHITECTURE_SECTIONS.length, progress: fraction(filled, ARCHITECTURE_SECTIONS.length) },
-    { stage: 'blueprint', planned, total, progress: planned > 0 ? DONE : TODO },
     { stage: 'manuscript', finalized, total,
       progress: total > 0 && finalized >= total ? DONE : started ? { state: 'active', ratio: total > 0 ? finalized / total : 0 } : TODO },
   ]
@@ -139,10 +140,19 @@ function createdAfterFinal(draft: DraftMeta, final: DraftMeta): boolean {
   return draft.createdAt > finalizedAt
 }
 
-/** 正文阶段的章节列表：蓝图章与已有稿的章取并集，按章号排序。 */
-export function deriveChapters(facts: Pick<WorkFacts, 'blueprints' | 'drafts' | 'runningChapters' | 'chapterFacts'>): ChapterRow[] {
+/**
+ * 正文阶段的章节列表：规划总章数 1…N、蓝图章、已有稿的章取并集，按章号排序。
+ * 无蓝图无稿时至少列出第 1 章到 totalChapters（total 无效时至少第 1 章）。
+ */
+export function deriveChapters(facts: Pick<WorkFacts, 'blueprints' | 'drafts' | 'runningChapters' | 'chapterFacts'> & {
+  totalChapters?: number
+}): ChapterRow[] {
   const titles = new Map(facts.blueprints.map(blueprint => [blueprint.chapterNumber, blueprint.title]))
-  const numbers = new Set([...titles.keys(), ...Object.keys(facts.drafts).map(Number)])
+  const plannedTotal = Number.isSafeInteger(facts.totalChapters) && (facts.totalChapters ?? 0) > 0
+    ? facts.totalChapters!
+    : 1
+  const planned = Array.from({ length: plannedTotal }, (_, index) => index + 1)
+  const numbers = new Set([...titles.keys(), ...Object.keys(facts.drafts).map(Number), ...planned])
   return [...numbers].sort((a, b) => a - b).map(number => {
     const drafts = facts.drafts[number] ?? []
     const final = drafts.find(draft => draft.status === 'finalized') ?? null
@@ -171,12 +181,12 @@ export function focusChapter(rows: readonly ChapterRow[]): ChapterRow | null {
 }
 
 /**
- * 打开作品时落在第一个未完成的阶段；四个阶段都完成时落在正文。设定齐了且已有蓝图或正文时落在当前写作位置（正文）：
- * 架构没写完（比如大纲分批只写了一部分）不把作者拉回架构，有正文没有蓝图也不落到空的蓝图页；流程脊与架构页照旧显示部分完成。
+ * 打开作品时落在第一个未完成的阶段；都完成时落在正文。设定齐了且已有正文进度时落在正文：
+ * 架构没写完不把作者拉回架构。
  */
 export function landingStage(stages: readonly StageStatus[]): WorkStage {
   const first = stages.find(status => status.progress.state !== 'done')?.stage ?? 'manuscript'
-  const begun = stages.some(status => (status.stage === 'blueprint' || status.stage === 'manuscript') && status.progress.state !== 'todo')
+  const begun = stages.some(status => status.stage === 'manuscript' && status.progress.state !== 'todo')
   return begun && first !== 'setup' ? 'manuscript' : first
 }
 

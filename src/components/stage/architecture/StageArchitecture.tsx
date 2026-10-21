@@ -95,7 +95,7 @@ export default function StageArchitecture({ projectKey }: { projectKey: string }
           <div className="arch-heading">
             <p className="arch-eyebrow">{text('架构', 'Architecture')}{filled !== null && <span className="arch-progress"> · {text(`${filled} / ${total} 已确认`, `${filled} / ${total} confirmed`)}</span>}</p>
             <h1 className="arch-title">{text('故事的骨架', 'The bones of the story')}</h1>
-            <p className="arch-lede">{text('前提、角色、世界观和情节大纲。四节都确认后，就可以逐章规划蓝图。', 'Premise, cast, world and outline. Once all four are confirmed, plan the chapters in the blueprint.')}</p>
+            <p className="arch-lede">{text('前提、角色、世界观和情节大纲。写正文不要求先填完；有多少用多少。', 'Premise, cast, world and outline. You can write chapters without finishing these; use what you have.')}</p>
           </div>
           <div className="arch-header-actions">
             <Menu
@@ -104,26 +104,18 @@ export default function StageArchitecture({ projectKey }: { projectKey: string }
               align="end"
               groups={[{ id: 'page', items: [
                 { id: 'refresh', label: text('刷新状态', 'Refresh status'), onSelect: reload },
-                ...(action === 'next' ? [{ id: 'generate', label: text('AI 生成架构…', 'Generate with AI…'), onSelect: () => overview.openGenerateDialog() }] : []),
+                { id: 'generate', label: text('AI 生成架构…', 'Generate with AI…'), onSelect: () => overview.openGenerateDialog() },
               ] }]}
             />
-            {action === 'next'
-              ? (
-                <Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'blueprint' })}>
-                  {text('下一步：章节蓝图', 'Next: chapter blueprint')}<ArrowRight size={14} aria-hidden />
-                </Button>
-              )
-              : (
-                <>
-                  <Button variant="secondary" disabled title={text('四节都确认后才能进入蓝图', 'Confirm all four sections first')}>
-                    {text('下一步：章节蓝图', 'Next: chapter blueprint')}<ArrowRight size={14} aria-hidden />
-                  </Button>
-                  <Button variant="primary" disabled={filled === null} onClick={() => overview.openGenerateDialog()}>
-                    <Sparkles size={14} aria-hidden />
-                    {action === 'generate' ? text('AI 生成架构', 'Generate architecture') : text('继续生成架构', 'Continue architecture')}
-                  </Button>
-                </>
-              )}
+            {action !== 'next' && (
+              <Button variant="secondary" disabled={filled === null} onClick={() => overview.openGenerateDialog()}>
+                <Sparkles size={14} aria-hidden />
+                {action === 'generate' ? text('AI 生成架构', 'Generate architecture') : text('继续生成架构', 'Continue architecture')}
+              </Button>
+            )}
+            <Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'manuscript' })}>
+              {text('去正文写作', 'Go write')}<ArrowRight size={14} aria-hidden />
+            </Button>
           </div>
         </header>
 
@@ -153,7 +145,7 @@ export default function StageArchitecture({ projectKey }: { projectKey: string }
         open={clearing !== null}
         onOpenChange={open => { if (!open) setClearing(null) }}
         title={text(`清空「${clearingName}」？`, `Clear ${clearingName}?`)}
-        consequence={text(`将删除「${clearingName}」的全部文本。其他三节、蓝图和正文不受影响。`, `All text in ${clearingName} will be deleted. The other sections, blueprints and chapters are not affected.`)}
+        consequence={text(`将删除「${clearingName}」的全部文本。其他三节和正文不受影响。`, `All text in ${clearingName} will be deleted. The other sections and chapters are not affected.`)}
         recoverability={text('清空后无法撤销；做过项目备份的，可以从备份恢复。', 'This cannot be undone. If you made a project backup, you can restore from it.')}
         confirmLabel={text('清空此节', 'Clear section')}
         cancelLabel={text('取消', 'Cancel')}

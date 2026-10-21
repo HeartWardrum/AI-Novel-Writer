@@ -133,12 +133,12 @@ afterEach(async () => {
 describe('架构阶段', () => {
   const LONG = '内容。'.repeat(30)
   it.each([
-    { state: '一节都没有', premise: '', cast: false, world: '', outline: 'none', count: 0, action: 'AI 生成架构' },
-    { state: '前提与角色名单', premise: PREMISE, cast: true, world: '', outline: 'none', count: 2, action: '继续生成架构' },
-    { state: '缺情节大纲', premise: PREMISE, cast: true, world: LONG, outline: 'none', count: 3, action: '继续生成架构' },
-    { state: '大纲只到第 16 章', premise: PREMISE, cast: true, world: LONG, outline: 'partial', count: 3, action: '继续生成架构' },
-    { state: '四节齐全', premise: PREMISE, cast: true, world: LONG, outline: 'full', count: 4, action: '下一步：章节蓝图' },
-  ])('主按钮与页头计数读四节徽标：$state', async ({ premise, cast, world, outline, count, action }) => {
+    { state: '一节都没有', premise: '', cast: false, world: '', outline: 'none', count: 0, secondary: 'AI 生成架构' },
+    { state: '前提与角色名单', premise: PREMISE, cast: true, world: '', outline: 'none', count: 2, secondary: '继续生成架构' },
+    { state: '缺情节大纲', premise: PREMISE, cast: true, world: LONG, outline: 'none', count: 3, secondary: '继续生成架构' },
+    { state: '大纲只到第 16 章', premise: PREMISE, cast: true, world: LONG, outline: 'partial', count: 3, secondary: '继续生成架构' },
+    { state: '四节齐全', premise: PREMISE, cast: true, world: LONG, outline: 'full', count: 4, secondary: null },
+  ])('主按钮与页头计数读四节徽标：$state', async ({ premise, cast, world, outline, count, secondary }) => {
     if (outline === 'partial') seedPartialOutline()
     core = { ...core, premise, worldbuilding: world, ...(outline === 'full' ? { synopsis: LONG } : {}) }
     rosterStatus = cast ? 'ready' : 'empty'
@@ -146,10 +146,16 @@ describe('架构阶段', () => {
     const ready = [...host!.querySelectorAll('.arch-badge')].filter(badge => badge.textContent === '已确认').length
     expect(ready).toBe(count)
     expect(host!.querySelector('.arch-eyebrow')?.textContent).toContain(`${count} / 4 已确认`)
-    expect(primary()).toBe(action)
+    expect(primary()).toBe('去正文写作')
     expect(host!.querySelectorAll('.arch-header .pi-btn--primary')).toHaveLength(1)
-    const next = button('下一步：章节蓝图') as HTMLButtonElement
-    expect(next.disabled).toBe(count < 4)
+    const next = button('去正文写作') as HTMLButtonElement
+    expect(next.disabled).toBe(false)
+    if (secondary) {
+      expect(button(secondary)).toBeTruthy()
+    } else {
+      expect(button('AI 生成架构')).toBeUndefined()
+      expect(button('继续生成架构')).toBeUndefined()
+    }
   })
 
   it('清空此节先出危险确认，取消后什么也不写、摘要不变；确认后才清空', async () => {

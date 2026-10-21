@@ -144,8 +144,8 @@ export default function StageHistory({ projectKey }: { projectKey: string }) {
       <div className="stage-hist stage-hist--empty">
         <EmptyState
           heading={text('还没有可回看的章节', 'No chapters to look back on yet')}
-          description={text('每章的草稿、修稿和定稿都会留在这里。先在蓝图里规划章节。', 'Every draft, revision and final of each chapter is kept here. Plan chapters in the blueprint first.')}
-          action={<Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'blueprint' })}>{text('打开蓝图', 'Open blueprint')}</Button>}
+          description={text('每章的草稿、修稿和定稿都会留在这里。先去正文写一章。', 'Every draft, revision and final of each chapter is kept here. Write a chapter first.')}
+          action={<Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'manuscript' })}>{text('去正文写作', 'Go write')}</Button>}
         />
       </div>
     )

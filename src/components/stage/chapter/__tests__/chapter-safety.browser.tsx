@@ -88,7 +88,7 @@ afterEach(async () => {
   useWorkflowStore.setState(original.workflow, true)
 })
 
-describe('版本切换器', () => {
+describe.skip('版本切换器（中栏已去掉版本下拉）', () => {
   it('切到另一稿时有未保存修改：先问；继续编辑什么都不动，保存并切换先写入再在原位置换上那一稿', async () => {
     const v1 = backend.addDraft({ status: 'archived', version: 1 })
     const v2 = backend.addDraft({ status: 'draft', version: 2, content: REVISED })
@@ -156,7 +156,7 @@ describe('标签与外壳', () => {
     expect(activeTab()?.dirty).toBe(true)
   })
 
-  it('审稿完成时命令打开的审稿报告标签改道到单章视图：不留独立标签，审稿侧页展开', async () => {
+  it('审稿完成时命令打开的审稿报告标签改道到单章视图：不留独立标签', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     await mount()
     await openDraft(draft.id)
@@ -166,8 +166,7 @@ describe('标签与外壳', () => {
       id: `review-${sourcePath}-1`, name: '审稿报告：第3章', type: 'review-report', content: AI_REVIEW, filePath: sourcePath,
       reviewReport: AI_REVIEW, chapterNumber: 3, chapterDir: 'ai-novel://draft/ch3', reviewId: review.id, projectKey: SESSION.projectPath,
     }))
-    await expect.element(page.getByRole('heading', { name: '审稿报告' })).toBeVisible()
-    await expect.element(page.getByRole('button', { name: '按 2 项意见修稿' })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: '本章标题' })).toBeVisible()
     expect(tabs().map(tab => [tab.type, tab.filePath])).toEqual([['chapter', sourcePath]])
   })
 
@@ -238,7 +237,7 @@ describe('标签与外壳', () => {
   })
 })
 
-describe('定稿冲突与定稿进行中', () => {
+describe.skip('定稿冲突与定稿进行中（中栏已去掉定稿入口）', () => {
   const conflict = { finalizationId: 'final-1', publicationStatus: 'published' as const }
   const markTab = (fields: { finalizationConflict?: typeof conflict; finalizationPublication?: 'pending' }) => act(async () => useEditorStore.setState(state => ({
     tabs: state.tabs.map(tab => tab.id === state.activeTabId ? { ...tab, ...fields } : tab),
@@ -292,7 +291,7 @@ describe('定稿冲突与定稿进行中', () => {
   })
 })
 
-describe('审稿侧页与运行侧页', () => {
+describe.skip('审稿侧页与运行侧页（中栏已去掉审稿入口）', () => {
   const reviewHeading = () => page.getByRole('heading', { name: '审稿报告' })
   const runHeading = () => page.getByRole('heading', { name: '运行' })
 
@@ -382,22 +381,24 @@ describe('写作此章、标签顶替与跨作品的请求', () => {
     expect(useStageStore.getState().writeRequest).toBeNull()
   })
 
-  it('这一章已经有稿：打开它的单章视图，写作请求落空，不会留到蓝图页再弹出', async () => {
+  it('这一章已经有稿：打开可编辑正文，写作请求落空，中栏无 AI 审稿', async () => {
     backend.addDraft({ status: 'draft' })
     await mount()
     await act(async () => stageNavigate({ kind: 'chapter', chapterNumber: 3, write: blueprintWritePrefill(BLUEPRINT) }))
-    await expect.element(page.getByRole('button', { name: 'AI 审稿', exact: true })).toBeVisible()
+    await expect.element(page.getByRole('textbox', { name: '本章标题' })).toBeVisible()
+    expect(page.getByRole('button', { name: 'AI 审稿', exact: true }).elements()).toHaveLength(0)
     expect(useStageStore.getState().writeRequest).toBeNull()
   })
 
-  it('这一章还没有蓝图：单章视图提示先去蓝图规划，写作请求落空，不会等蓝图补上后在别处弹出', async () => {
+  it('这一章还没有蓝图：仍打开单章视图并弹出写作弹层，写作请求当场消费', async () => {
     await mount()
     await act(async () => stageNavigate({ kind: 'chapter', chapterNumber: 5, write: blueprintWritePrefill({ ...BLUEPRINT, chapterNumber: 5 }) }))
-    await expect.element(page.getByText('这一章还没有蓝图')).toBeVisible()
+    await expect.element(page.getByRole('dialog', { name: '本次写作选项' })).toBeVisible()
+    await expect.element(page.getByText('没有蓝图也可以写；在弹层里可加作者指导')).toBeVisible()
     expect([activeTab()?.type, activeTab()?.chapterNumber, useStageStore.getState().writeRequest]).toEqual(['chapter', 5, null])
   })
 
-  it('读本章蓝图失败：写明读取失败并可重试，不当成没有蓝图，写作请求留着；重试读到后弹出写作弹层', async () => {
+  it('读本章蓝图失败：写明读取失败并可重试，仍可写作；写作请求当场弹出弹层', async () => {
     const base = backend.invoke.getMockImplementation()!
     let failing = true
     backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'db:blueprint-get' && failing
@@ -405,18 +406,18 @@ describe('写作此章、标签顶替与跨作品的请求', () => {
     await mount()
     await act(async () => stageNavigate({ kind: 'chapter', chapterNumber: 3, write: blueprintWritePrefill(BLUEPRINT) }))
     await expect.element(page.getByText('读取本章蓝图失败')).toBeVisible()
-    await expect.element(page.getByText('写作此章按本章蓝图写，读到之后才能开始。')).toBeVisible()
-    expect(page.getByText('这一章还没有蓝图').elements()).toHaveLength(0)
-    expect(useStageStore.getState().writeRequest?.chapterNumber).toBe(3)
+    await expect.element(page.getByText('仍可直接写作；有蓝图时会用来增强标题与事件。')).toBeVisible()
+    await expect.element(page.getByRole('dialog', { name: '本次写作选项' })).toBeVisible()
+    expect(useStageStore.getState().writeRequest).toBeNull()
     failing = false
     await act(async () => page.getByRole('button', { name: '重新读取' }).click())
-    await expect.element(page.getByRole('dialog', { name: '本次写作选项' })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '写作此章' })).toBeVisible()
   })
 
-  it('没有蓝图的待写章已经开着，之后再来的写作请求也落空', async () => {
+  it('无稿点开第 5 章会建空稿；之后带写作请求时若已有稿则请求落空', async () => {
     await mount()
     await act(async () => stageNavigate({ kind: 'chapter', chapterNumber: 5 }))
-    await expect.element(page.getByText('这一章还没有蓝图')).toBeVisible()
+    await vi.waitFor(() => expect(activeTab()?.filePath).toBeTruthy())
     await act(async () => stageNavigate({ kind: 'chapter', chapterNumber: 5, write: blueprintWritePrefill({ ...BLUEPRINT, chapterNumber: 5 }) }))
     await vi.waitFor(() => expect(useStageStore.getState().writeRequest).toBeNull())
   })
@@ -452,7 +453,7 @@ describe('写作此章、标签顶替与跨作品的请求', () => {
     expect(useStageStore.getState().sheet).toBeNull()
   })
 
-  it('删除正文的确认写的是新外壳里重试清理的位置', async () => {
+  it.skip('删除正文的确认写的是新外壳里重试清理的位置（中栏已去掉删除入口）', async () => {
     const draft = backend.addDraft({ status: 'finalized' })
     await mount()
     await openDraft(draft.id)

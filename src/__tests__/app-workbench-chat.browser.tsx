@@ -10,19 +10,19 @@ import { setActiveProjectSessionContext } from '../shared/project-session-contex
 import { useLayoutStore } from '../stores/layout-store'
 import { useLocaleStore } from '../stores/locale-store'
 import { navigate } from '../stores/navigation/navigation-intents'
+import { useStageStore } from '../stores/navigation/stage-store'
 import { useProjectStore } from '../stores/project-store'
 import { useWorkflowStore } from '../stores/workflow-store'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const CHAT_WORDS = /Agent|助手|聊天|对话|assistant|chat/i
 const session = { projectId: '灯塔', projectPath: 'C:/novels/lighthouse', leaseId: '本次打开' }
 const project = { id: session.projectId, name: '灯塔', path: session.projectPath, sessionLease: session.leaseId, novelConfig: {
-  coreOutline: '', genre: '', subGenre: '', targetAudience: '', totalChapters: 24, wordsPerChapter: 3000, worldSetting: '', goldenFinger: '',
+  coreOutline: '雾钟', genre: '悬疑', subGenre: '', targetAudience: '成年读者', totalChapters: 24, wordsPerChapter: 3000, worldSetting: '', goldenFinger: '',
   protagonistProfile: '', globalGuidance: '', writingStyle: '', referenceWorks: '', narrativePOV: 'third_limited', plotStructure: 'three_act', writingLanguage: 'zh-CN',
 } } as unknown as ProjectData
 
-const restores = [useLayoutStore, useLocaleStore, useProjectStore, useWorkflowStore].map(store => {
+const restores = [useLayoutStore, useLocaleStore, useProjectStore, useWorkflowStore, useStageStore].map(store => {
   const state = (store as StoreApi<unknown>).getState()
   return () => (store as StoreApi<unknown>).setState(state, true)
 })
@@ -32,12 +32,15 @@ let host: HTMLDivElement
 let root: Root
 let invoke: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => Promise<unknown>>>
 
-/** 主进程的回复按渠道给出最小的合法形状；列表类给空列表。 */
 function reply(channel: string): unknown {
   if (channel === 'config:get') return { locale: configLocale }
   if (channel === 'project:smoke-open-request') return null
   if (/list|history|models/i.test(channel)) return []
   if (channel === 'fs:check-exists') return false
+  if (channel === 'db:blueprint-get-all') return []
+  if (channel === 'db:project-core-get') return { premise: '', worldbuilding: '', synopsis: '' }
+  if (channel === 'db:character-roster-read') return { status: 'empty' }
+  if (channel === 'db:draft-list-all') return []
   return { success: true }
 }
 
@@ -49,6 +52,7 @@ beforeEach(() => {
   setActiveProjectSessionContext(session)
   useLayoutStore.setState({ sidebarView: 'project' })
   useWorkflowStore.setState({ activeRuns: [], history: [] })
+  useStageStore.setState({ rightRail: 'chat', sheet: null, pendingDraftAdopt: null })
   host = document.createElement('div')
   host.style.cssText = 'width: 1440px; height: 900px; display: flex'
   document.body.append(host)
@@ -64,17 +68,29 @@ afterEach(async () => {
   delete window.aiNovelAPI
 })
 
-describe('应用里没有 AI 聊天', () => {
-  it.each<Locale>(['zh-CN', 'en-US'])('%s：作品里的界面与运行侧页都没有聊天入口', async locale => {
-    configLocale = locale
-    useLocaleStore.setState({ locale })
+describe('三栏写作台的对话', () => {
+  it('打开作品后可见对话栏与材料栏', async () => {
     await act(async () => root.render(<App />))
     await vi.waitFor(() => expect(host.querySelector('.stage-shell')).not.toBeNull())
+    await vi.waitFor(() => expect(host.querySelector('.workbench-right')).not.toBeNull())
+    expect(host.querySelector('.materials-rail')).not.toBeNull()
+    expect(host.textContent).toMatch(/对话|AI 写作助手/)
+  })
+
+  it('运行子页可从对话栏切换打开', async () => {
+    await act(async () => root.render(<App />))
+    await vi.waitFor(() => expect(host.querySelector('.workbench-right')).not.toBeNull())
     await act(async () => navigate({ kind: 'run', facet: 'output' }))
-    await vi.waitFor(() => expect(host.querySelector('.stage-sheet-slot')).not.toBeNull())
-    expect(host.textContent).not.toMatch(CHAT_WORDS)
-    expect([...host.querySelectorAll('[aria-label],[title],[placeholder]')]
-      .map(node => ['aria-label', 'title', 'placeholder'].map(name => node.getAttribute(name) ?? '').join(' ')).join(' ')).not.toMatch(CHAT_WORDS)
+    await vi.waitFor(() => expect(useStageStore.getState().rightRail).toBe('run'))
+    expect(host.querySelector('.workbench-run')).not.toBeNull()
+  })
+
+  it('书房不显示写作对话栏', async () => {
+    useLayoutStore.setState({ sidebarView: 'home' })
+    await act(async () => root.render(<App />))
+    await vi.waitFor(() => expect(host.querySelector('.stage-shell')).not.toBeNull())
+    expect(host.querySelector('.workbench-right')).toBeNull()
+    expect(host.querySelector('.materials-rail')).toBeNull()
   })
 
   it('启动时不连接 MCP 服务器', async () => {

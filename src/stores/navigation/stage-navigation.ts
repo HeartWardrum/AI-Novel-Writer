@@ -1,7 +1,9 @@
 import { leaveSettings, leaveSettingsThen } from '../../components/settings/unsaved-settings'
 import { toast } from '../../components/ui/Toast'
 import type { DraftMeta } from '../../services/draft-index'
+import { ipc } from '../../services/ipc-client'
 import { chapterTabName } from '../../shared/chapter-label'
+import { countDraftUnits } from '../../shared/draft-units'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../shared/project-session-context'
 import { fetchChapterDrafts, useDraftStore } from '../draft-store'
@@ -10,9 +12,10 @@ import { useLayoutStore } from '../layout-store'
 import { useLocaleStore } from '../locale-store'
 import { openDraftTab } from '../open-draft-tab'
 import { useProjectStore } from '../project-store'
+import { useWorkflowStore } from '../workflow-store'
 import type { NavigationIntent } from './navigation-intents'
 import { openPageTab } from './page-tabs'
-import { deriveChapters, focusChapter } from './stage-progress'
+import { deriveChapters, focusChapter, runningChapters } from './stage-progress'
 import { useStageStore } from './stage-store'
 
 /**
@@ -55,8 +58,38 @@ export function openChapterPlan(chapterNumber: number, title: string, session: P
   })
 }
 
+/** 无稿章点开时建一份空草稿，供中栏直接手写；失败抛错由 openChapter 提示。 */
+async function ensureEmptyChapterDraft(
+  chapterNumber: number,
+  session: ProjectSessionContext,
+): Promise<DraftMeta> {
+  const nextVersion = await ipc.invokeWithProjectSession(
+    session,
+    'db:draft-next-version',
+    chapterNumber,
+    session.projectPath,
+  )
+  const created = await ipc.invokeWithProjectSession(session, 'db:draft-create', {
+    chapterNumber,
+    version: nextVersion,
+    source: 'write',
+    content: '',
+    wordCount: countDraftUnits(''),
+  }, session.projectPath)
+  if (!created.success || created.id === undefined) {
+    throw new Error(created.error || '没有新建空草稿')
+  }
+  await useDraftStore.getState().loadChapterDrafts(chapterNumber, session.projectPath, session)
+  const listed = useDraftStore.getState().draftsByChapter[chapterNumber]
+    ?? await fetchChapterDrafts(chapterNumber, session)
+  const draft = listed.find(item => item.id === created.id)
+  if (!draft) throw new Error('空草稿已写入但读不到列表')
+  return draft
+}
+
 /**
- * 打开一章：已有这一稿的标签就直接切过去；否则读出正文开新标签。待写的章还没有正文，打开它的单章视图，那里有「写作此章」。
+ * 打开一章：已有这一稿的标签就直接切过去；否则读出正文开新标签。
+ * 尚无稿时默认建空草稿供手写；带「写作此章」请求或该章正在生成时仍进待写单章视图。
  * 连续点几章时只有最后一次生效；读取失败时提示作者，而不是点了没反应。
  */
 export async function openChapter(chapterNumber: number): Promise<void> {
@@ -69,16 +102,24 @@ export async function openChapter(chapterNumber: number): Promise<void> {
     const drafts = await chapterDrafts(chapterNumber, session)
     if (!stillWanted()) return
     const work = useStageStore.getState().work
-    const [row] = deriveChapters({
+    // deriveChapters 会按 totalChapters 展开 1…N；这里只取目标章，避免误用第 1 章行。
+    const row = deriveChapters({
       blueprints: (work && sameProjectSessionContext(work.session, session) ? work.blueprints : [])
         .filter(blueprint => blueprint.chapterNumber === chapterNumber),
       drafts: { [chapterNumber]: drafts },
       runningChapters: new Set(),
-    })
-    const draft = row?.draft
+      totalChapters: chapterNumber,
+    }).find(candidate => candidate.number === chapterNumber)
+    let draft = row?.draft
     if (!draft) {
-      openChapterPlan(chapterNumber, row?.title ?? '', session)
-      return
+      const writePending = useStageStore.getState().writeRequest?.chapterNumber === chapterNumber
+      const chapterRunning = runningChapters(useWorkflowStore.getState().activeRuns).has(chapterNumber)
+      if (writePending || chapterRunning) {
+        openChapterPlan(chapterNumber, row?.title ?? '', session)
+        return
+      }
+      draft = await ensureEmptyChapterDraft(chapterNumber, session)
+      if (!stillWanted()) return
     }
     // 已经有稿的章没有写作此章；写作请求（比如定稿后自动打开下一章）落空，不能留到别处再弹出。
     if (useStageStore.getState().writeRequest?.chapterNumber === chapterNumber) useStageStore.setState({ writeRequest: null })
@@ -88,7 +129,7 @@ export async function openChapter(chapterNumber: number): Promise<void> {
       editor.setActiveTab(open.id)
       return
     }
-    await openDraftTab(draft, chapterTabName(chapterNumber, row.title, text), session, stillWanted)
+    await openDraftTab(draft, chapterTabName(chapterNumber, row?.title ?? '', text), session, stillWanted)
   } catch (error) {
     if (!stillWanted()) return
     const reason = error instanceof Error ? error.message : String(error)
@@ -100,10 +141,14 @@ export async function openChapter(chapterNumber: number): Promise<void> {
 // 审稿侧页按稿的 filePath 归属，稿 id 在各作品里各自递增会撞，换作品或重新打开时一并收起。
 useProjectStore.subscribe(({ currentProject }, previous) => {
   const session = projectSessionContextFromProject(currentProject)
-  const { writeRequest, chapterRequest, sheet } = useStageStore.getState()
+  const { writeRequest, chapterRequest, sheet, pendingDraftAdopt } = useStageStore.getState()
   if (writeRequest && !sameProjectSessionContext(writeRequest.session, session)) useStageStore.setState({ writeRequest: null })
   if (chapterRequest && !sameProjectSessionContext(chapterRequest.session, session)) useStageStore.setState({ chapterRequest: null })
+  if (pendingDraftAdopt && !sameProjectSessionContext(pendingDraftAdopt.session, session)) useStageStore.setState({ pendingDraftAdopt: null })
   if (sheet?.kind === 'review' && !sameProjectSessionContext(projectSessionContextFromProject(previous.currentProject), session)) useStageStore.setState({ sheet: null })
+  if (!sameProjectSessionContext(projectSessionContextFromProject(previous.currentProject), session)) {
+    useStageStore.setState({ rightRail: 'chat' })
+  }
 })
 
 function openKnowledge(): void {
@@ -113,22 +158,24 @@ function openKnowledge(): void {
   useEditorStore.getState().openFile({ id: 'knowledge-base', name: text('知识库', 'Knowledge base'), type: 'knowledge', projectKey })
 }
 
-/** 正文阶段本身没有页面，落到当前该写的那一章；还没有任何章时先去蓝图。 */
+/** 正文阶段落到当前该写的那一章；还没有任何章时打开第 1 章单章视图，不强制回蓝图。 */
 async function openManuscript(): Promise<void> {
   const session = currentSession()
   const work = useStageStore.getState().work
-  if (!session || !work || !sameProjectSessionContext(work.session, session)) {
-    openPageTab('blueprint')
+  if (!session) return
+  if (!work || !sameProjectSessionContext(work.session, session)) {
+    await openChapter(1)
     return
   }
   const drafts = useDraftStore.getState()
+  const totalChapters = useProjectStore.getState().currentProject?.novelConfig.totalChapters
   const target = focusChapter(deriveChapters({
     blueprints: work.blueprints,
     drafts: sameProjectSessionContext(drafts.dataProjectSession, session) ? drafts.draftsByChapter : {},
     runningChapters: new Set(),
+    totalChapters,
   }))
-  if (target) await openChapter(target.number)
-  else openPageTab('blueprint')
+  await openChapter(target?.number ?? 1)
 }
 
 /**
@@ -170,15 +217,20 @@ function arrive(intent: Exclude<NavigationIntent, { kind: 'settings' }>): void {
       if (!intent.stage) {
         // 回到作品只收起运行侧页。审稿侧页属于单章视图：打开作品落在已审稿的章时它按这一章默认展开，不能随后又被收起。
         if (useStageStore.getState().sheet?.kind === 'run') useStageStore.setState({ sheet: null })
-      } else if (intent.stage === 'manuscript') void openManuscript()
-      else openPageTab(intent.stage)
+      } else if (intent.stage === 'manuscript' || intent.stage === 'blueprint') {
+        // 蓝图阶段已取消：旧链接与命令统一落到正文。
+        void openManuscript()
+      } else openPageTab(intent.stage)
       return
     case 'resource':
       if (intent.page === 'knowledge') openKnowledge()
       else openPageTab(intent.page)
       return
     case 'run':
-      useStageStore.setState({ sheet: { kind: 'run', tab: intent.facet === 'log' || intent.facet === 'models' ? 'diagnostics' : 'active', runId: intent.runId } })
+      useStageStore.setState({
+        rightRail: 'run',
+        sheet: { kind: 'run', tab: intent.facet === 'log' || intent.facet === 'models' ? 'diagnostics' : 'active', runId: intent.runId },
+      })
       return
     case 'chapter':
       void openChapter(intent.chapterNumber)

@@ -16,10 +16,12 @@ import { SETTINGS_PAGES } from './settings/settings-pages'
 import { preloadStagePages } from './stage-pages'
 import StagePalette from './StagePalette'
 import { paletteItem, type PaletteItem } from './palette-filter'
-import StageSpine from './StageSpine'
+import MaterialsRail from './MaterialsRail'
+import WorkbenchRight from './WorkbenchRight'
 import StageTopBar from './StageTopBar'
 import StageWorkspace from './StageWorkspace'
 import ReferenceFloatLayer from './reference/ReferenceFloatLayer'
+import { usePendingDraftAdoptFromWorkflow } from './DraftAdoptBanner'
 import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES, STAGE_NAMES, stageTabName } from './stage-text'
 import { refreshStageWork, useLandingPage, useStageView, useStageWorkRefresh, type StageView } from './use-stage-work'
 import { useStageShortcuts } from './use-stage-shortcuts'
@@ -49,6 +51,8 @@ export default function StageShell({ theme }: { theme: Theme }) {
   const library = !hasProject || home
   const focus = useStageStore(s => s.focus) && !library
   const palette = useStageStore(s => s.palette)
+  const rightRail = useStageStore(s => s.rightRail)
+  const sheet = useStageStore(s => s.sheet)
   const activeName = useEditorStore(s => {
     const tab = s.tabs.find(candidate => candidate.id === s.activeTabId)
     return tab ? stageTabName(tab, text) : undefined
@@ -60,6 +64,7 @@ export default function StageShell({ theme }: { theme: Theme }) {
   useStageWorkRefresh()
   useLandingPage(view)
   useStageShortcuts({ library, focus })
+  usePendingDraftAdoptFromWorkflow()
 
   useEffect(() => {
     if (library && useStageStore.getState().focus) useStageStore.setState({ focus: false })
@@ -98,10 +103,12 @@ export default function StageShell({ theme }: { theme: Theme }) {
   ], [text])
 
   const paletteItems = useMemo<PaletteItem[]>(() => {
-    const go = view.stages.map(status => paletteItem('stage', {
-      id: `stage-${status.stage}`, label: text(...STAGE_NAMES[status.stage]),
-      run: () => navigate({ kind: 'stage', stage: status.stage }),
-    }))
+    const go = view.stages
+      .filter(status => status.stage !== 'blueprint')
+      .map(status => paletteItem('stage', {
+        id: `stage-${status.stage}`, label: text(...STAGE_NAMES[status.stage]),
+        run: () => navigate({ kind: 'stage', stage: status.stage }),
+      }))
     const chapters = view.chapters.map(row => paletteItem('chapter', {
       id: `chapter-${row.number}`, chapter: row.number,
       label: row.title ? `${chapterLabel(row.number, text)} · ${row.title}` : chapterLabel(row.number, text),
@@ -126,7 +133,8 @@ export default function StageShell({ theme }: { theme: Theme }) {
       paletteItem('action', { id: 'import', label: text('小说拆解与仿写', 'Novel breakdown & imitation'), run: importNovel }),
       ...(hasProject ? [
         paletteItem('action', { id: 'library', label: text('回到书房', 'Back to library'), run: backToLibrary }),
-        paletteItem('action', { id: 'run', label: text('运行侧页', 'Run sheet'), keywords: 'AI 输出 任务 日志', run: () => navigate({ kind: 'run', facet: 'output' }) }),
+        paletteItem('action', { id: 'run', label: text('运行', 'Run'), keywords: 'AI 输出 任务 日志', run: () => navigate({ kind: 'run', facet: 'output' }) }),
+        paletteItem('action', { id: 'chat', label: text('对话', 'Chat'), keywords: '助手 AI 聊天', run: () => useStageStore.setState({ rightRail: 'chat' }) }),
         paletteItem('action', { id: 'export', label: text('导出', 'Export'), run: () => useLayoutStore.getState().openExport() }),
         paletteItem('action', { id: 'backup', label: text('项目备份', 'Project backup'), run: () => navigate({ kind: 'settings', section: 'backup' }) }),
       ] : []),
@@ -159,9 +167,9 @@ export default function StageShell({ theme }: { theme: Theme }) {
         workMenu={workMenu}
         onToggleFocus={toggleFocus}
       />
-      <div className="stage-frame">
+      <div className="stage-frame" data-workbench={!library || undefined}>
         {!library && !focus && (
-          <StageSpine
+          <MaterialsRail
             stages={view.stages}
             chapters={view.chapters}
             location={view.location}
@@ -173,6 +181,14 @@ export default function StageShell({ theme }: { theme: Theme }) {
           />
         )}
         <StageWorkspace library={library} focus={focus} />
+        {!library && (
+          <WorkbenchRight
+            mode={rightRail}
+            onMode={mode => useStageStore.setState({ rightRail: mode })}
+            sheet={sheet}
+            focus={focus}
+          />
+        )}
       </div>
       <StagePalette mode={palette} items={paletteItems} container={root} onClose={() => useStageStore.setState({ palette: null })} />
       <ClearProjectDataDialog open={clearOpen} onClose={() => setClearOpen(false)} onCleared={() => refreshStageWork(text)} />

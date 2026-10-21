@@ -62,7 +62,7 @@ export function badgeTone(badge: SectionBadge): BadgeTone {
   return badge.kind === 'empty' ? 'muted' : 'warn'
 }
 
-/** 架构阶段唯一的主操作：一节都没确认时生成架构，有缺口时继续生成，四节都已确认时进入蓝图。 */
+/** 架构页生成类操作：一节都没确认时生成，有缺口时继续；四节齐全时不再显示生成按钮（主按钮始终是去正文）。 */
 export type ArchitectureMainAction = 'generate' | 'continue' | 'next'
 
 export function mainAction(filled: number, total: number): ArchitectureMainAction {

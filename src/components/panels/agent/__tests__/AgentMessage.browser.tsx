@@ -60,4 +60,31 @@ describe('AgentMessage copy action', () => {
     expect(page.getByRole('alert')).toHaveTextContent('Could not copy this message')
     expect(container.textContent).toContain('Keep this visible')
   })
+
+  it('expands requestDebug context for the assistant turn', async () => {
+    useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
+    await act(async () => root.render(<AgentMessage message={{
+      id: 'assistant-debug',
+      role: 'assistant',
+      content: '助手回复',
+      createdAt: 1,
+      requestDebug: {
+        at: 1,
+        modelId: 'model-a',
+        messages: [
+          { role: 'system', content: '你是写作助手' },
+          { role: 'user', content: '写一篇捉鬼小说' },
+        ],
+        meta: { purpose: 'generation', reasoningStage: 'drafting', historyCount: 0 },
+      },
+    }} />))
+
+    expect(container.textContent).toContain('本次请求上下文')
+    const summary = container.querySelector('summary')
+    expect(summary).not.toBeNull()
+    await act(async () => { summary!.click() })
+    expect(container.textContent).toContain('你是写作助手')
+    expect(container.textContent).toContain('写一篇捉鬼小说')
+    expect(container.textContent).toContain('模型: model-a')
+  })
 })

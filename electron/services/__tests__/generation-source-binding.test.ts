@@ -102,6 +102,18 @@ describe('main rebuilt generation sources', () => {
         expect(f.db.prepare("SELECT * FROM characters WHERE character_id='character-unproved'").get()).toEqual(stored);
     });
 
+    it('allows chapter-draft without a blueprint row and freezes a null brief', () => {
+        const f = fixture();
+        migrateSchema(new SqliteSchemaAdapter(f.db), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION);
+        f.db.prepare('DELETE FROM blueprints WHERE chapter_number=2').run();
+        f.input.operation = 'chapter-draft';
+        f.input.selectedDraftIds = [];
+        f.input.selectedFinalizedDraftIds = [];
+        const built = f.build();
+        expect(built.materials.find(item => item.ref.sourceId === 'blueprint:2')?.text).toBe('null');
+        expect(() => buildGenerationSourceBinding(f.deps, { ...f.input, operation: 'chapter' })).toThrow('GENERATION_CHAPTER_MISSING');
+    });
+
     it('keeps valid author, legacy and current derived state while omitting one invalid field entry', () => {
         const f = fixture();
         migrateSchema(new SqliteSchemaAdapter(f.db), getDesktopMigrationRegistry(), CURRENT_DESKTOP_SCHEMA_VERSION);

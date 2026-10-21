@@ -35,6 +35,7 @@ const SOURCE_CONFIG = {
 
 const PROMPT_META_EN: Record<string, { name: string; description: string }> = {
   planning_material_character_extraction: { name: 'Planning material character extraction', description: 'Extract character candidates from explicit author material' },
+  direct_chat_system: { name: 'Direct chat system prompt', description: 'System identity for the workbench chat rail (no tool protocol)' },
   assistant_writing_identity: { name: 'AI writing assistant identity', description: 'Define the creative role and working guidance for the writing assistant' },
   edit_selected_text: { name: 'Selected-text editing', description: 'Refine, expand, or rewrite selected story prose' },
   generate_novel_config_field: { name: 'Single configuration field', description: 'Complete one novel setting from existing author facts' },

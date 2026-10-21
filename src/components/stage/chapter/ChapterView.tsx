@@ -1,69 +1,37 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BadgeCheck } from 'lucide-react'
 import { countDraftUnits } from '../../../shared/draft-units'
-import { formatResourceUri } from '../../../shared/project-paths'
 import type { EditorTab } from '../../../stores/editor-store'
-import { readDraftBody } from '../../../stores/draft-store'
+import { useEditorStore } from '../../../stores/editor-store'
 import { useCharacterStore } from '../../../stores/character-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { chapterPhase } from '../../../stores/navigation/stage-progress'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
-import type { ReviewEntry } from '../../../services/draft-index'
-import { ipc } from '../../../services/ipc-client'
-import { confirmationSourceReviewId, parseHumanConfirmedReviewSnapshot } from '../../../shared/human-confirmed-review'
+import { chapterTabName } from '../../../shared/chapter-label'
 import CodeMirrorEditor from '../../editor/CodeMirrorEditor'
-import { useReviewCycle } from '../../editor/review-checklist'
 import { useDraftActions } from '../../editor/use-draft-actions'
 import { sameProjectSessionContext } from '../../../shared/project-session-context'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
-import ChapterActions from './ChapterActions'
+import { Button } from '../../ui/Button'
+import { Notice } from '../../ui/Notice'
+import { toast } from '../../ui/Toast'
+import { InkDialog } from '../InkDialog'
 import ChapterHead from './ChapterHead'
 import DeletionCleanupNotices from './DeletionCleanupNotices'
 import { useChapterBlueprint } from './use-chapter-blueprint'
 import ChapterPlan from './ChapterPlan'
-import { STAGE_STEP } from './chapter-lifecycle'
-import VersionSwitcher from './VersionSwitcher'
+import MergeView from './MergeView'
+import PostProcessSteps from './PostProcessSteps'
+import { saveChapterTitle } from './save-chapter-title'
 import { pluralEn } from '../../../shared/plural-en'
 
-/**
- * 这一稿显示哪份审稿与原文：最新一份有复验周期的审稿（确认后的清单按它指向的原审稿算），都没有周期（旧审稿）时取最新一份。
- * 合并后的自动复验另存一份审稿，它没有自己的周期，逐项结果写回原审稿的周期；显示原审稿才看得到复验完成几项与逐项结果。
- * 审稿记录变化时重读。
- */
-function useShownReview(reviews: readonly ReviewEntry[], projectKey: string) {
-  const key = reviews.map(review => review.id).join(',')
-  const [report, setReport] = useState<{ key: string; id: number; content: string } | null>(null)
-  useEffect(() => {
-    if (reviews.length === 0) return
-    const session = captureProjectSession(useProjectStore.getState().currentProject)
-    if (!session || !isProjectSessionPath(session, projectKey)) return
-    let cancelled = false
-    const live = () => !cancelled && isProjectSessionCurrent(session)
-    void (async () => {
-      let shown: { id: number; content: string } | null = null
-      for (const entry of [...reviews].reverse()) {
-        // 读不出原文时按空报告处理：动作条照常出现，侧页里没有可勾选的意见，作者可以重新审稿。
-        const content = await readDraftBody(formatResourceUri({ kind: 'review', id: entry.id }), projectKey, session).catch(() => '')
-        if (!live()) return
-        shown ??= { id: entry.id, content }
-        const cycleReviewId = confirmationSourceReviewId(parseHumanConfirmedReviewSnapshot(content), entry.id)
-        const cycle = await ipc.invokeWithProjectSession(session, 'db:review-cycle-get', cycleReviewId, session.projectPath).catch(() => null)
-        if (!live()) return
-        if (cycle) {
-          shown = { id: entry.id, content }
-          break
-        }
-      }
-      if (shown) setReport({ key: reviews.map(review => review.id).join(','), ...shown })
-    })()
-    return () => { cancelled = true }
-  }, [reviews, projectKey])
-  return report?.key === key ? report : null
-}
+const AUTOSAVE_MS = 1500
 
 /**
- * 正文单章视图：章节头、生命周期、章节动作条、版本切换器与纸面正文。待写章显示本章蓝图与写作此章。
- * 审稿报告是视图里的侧页，修稿合并在纸面上逐段选择，定稿后显示后处理四步；全程不需要离开这个标签。
+ * 正文单章视图：可编辑标题、字数与纸面正文；自动保存。
+ * 定稿在中栏确认后走 createFinalizeWorkflow；AI 对话在右栏。
+ * 待写章（写作请求或章在跑）仍用 ChapterPlan。有待合并修稿时直接摆 MergeView。
  */
 export default function ChapterView({ tab }: { tab: EditorTab }) {
   const project = useProjectStore(s => s.currentProject)
@@ -84,25 +52,15 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const request = useStageStore(s => s.chapterRequest)
   const draft = useDraftActions({ tabId: tab.id, filePath, content: tab.content ?? '', projectKey })
   const chapterNumber = draft.meta?.chapterNumber ?? tab.chapterNumber
-  const { blueprint } = useChapterBlueprint(chapterNumber, projectKey)
-  const latest = useShownReview(draft.reviews, projectKey)
-  const review = useReviewCycle({ reportText: latest?.content ?? '', reviewId: latest?.id, projectKey,
-    // 复验完成时新增一份审稿而显示的仍是原审稿，审稿记录也算进来，周期随之重读。
-    refreshKey: `${draft.status}:${draft.pendingRevisions.map(revision => revision.id).join(',')}:${draft.reviews.map(entry => entry.id).join(',')}` })
+  const { blueprint, reload: reloadBlueprint } = useChapterBlueprint(chapterNumber, projectKey)
   const [charCount, setCharCount] = useState(() => countDraftUnits(tab.content ?? ''))
-  // 沉浸写作底部的字数进度，目标取设定里的每章字数。
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
-  const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
 
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)
     ? s.chapterFacts.byDraft[draft.meta.id]
     : undefined)
-  // 这一稿的记录与最新审稿都读出来之前不摆动作条：先按不全的数据摆会闪一下别的主按钮，清单状态也会被重置。
-  const reviewReady = draft.loaded && (draft.reviews.length === 0 || latest !== null)
   const stage = draft.loaded && draft.meta ? draft.status === 'archived' ? 'archived' : chapterPhase(draft.status, facts) : null
 
-  // 审稿或修稿刚在别处生成：重读这一稿的数据，并收起跟着工作流打开的运行侧页。新审稿换掉动作条的会话键，
-  // 审稿侧页按「已审稿」默认展开；待合并修稿直接摆出合并视图。
   const { reload } = draft
   useEffect(() => {
     if (!request || request.filePath !== filePath || !sameProjectSessionContext(request.session, captureProjectSession(useProjectStore.getState().currentProject))) return
@@ -110,14 +68,63 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  const title = blueprint?.title || draft.meta?.chapterTitle || ''
+  const storedTitle = blueprint?.title || draft.meta?.chapterTitle || ''
+  const [titleDraft, setTitleDraft] = useState(storedTitle)
+  useEffect(() => { setTitleDraft(storedTitle) }, [storedTitle, chapterNumber])
+
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (titleTimer.current) clearTimeout(titleTimer.current)
+    if (bodyTimer.current) clearTimeout(bodyTimer.current)
+  }, [])
+
+  const persistTitle = async (next: string) => {
+    if (chapterNumber === undefined) return
+    const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
+    if (!projectSession || !isProjectSessionPath(projectSession, projectKey)) return
+    try {
+      await saveChapterTitle(projectSession, chapterNumber, next.trim(), text)
+      if (!isProjectSessionCurrent(projectSession)) return
+      const name = chapterTabName(chapterNumber, next.trim(), text)
+      useEditorStore.setState(state => ({
+        tabs: state.tabs.map(candidate => candidate.id === tab.id ? { ...candidate, name } : candidate),
+      }))
+      reloadBlueprint()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : text('保存标题失败', 'Could not save the title'))
+    }
+  }
+
+  const onTitleChange = (next: string) => {
+    setTitleDraft(next)
+    if (titleTimer.current) clearTimeout(titleTimer.current)
+    titleTimer.current = setTimeout(() => { void persistTitle(next) }, AUTOSAVE_MS)
+  }
+
+  const onBodyChange = (body: string) => {
+    draft.onBodyChange(body)
+    if (bodyTimer.current) clearTimeout(bodyTimer.current)
+    bodyTimer.current = setTimeout(() => {
+      void draft.save(draft.currentBodyRef.current)
+    }, AUTOSAVE_MS)
+  }
+
   const units = charCount.toLocaleString(locale)
-  const versionLabel = !draft.meta ? text('读取中…', 'Loading…')
-    : stage === 'final' ? text(`定稿 · ${units} 字`, `Final · ${units} ${pluralEn(charCount, 'word')}`)
-      : stage === 'archived' ? text(`已归档 v${draft.meta.version} · ${units} 字`, `Archived v${draft.meta.version} · ${units} ${pluralEn(charCount, 'word')}`)
-        : stage === 'revised' ? text(`修稿已合并 v${draft.meta.version} · ${units} 字`, `Revised v${draft.meta.version} · ${units} ${pluralEn(charCount, 'word')}`)
-          : text(`草稿 v${draft.meta.version} · ${units} 字`, `Draft v${draft.meta.version} · ${units} ${pluralEn(charCount, 'word')}`)
+  const wordMeta = target > 0
+    ? text(`${units} / ${target.toLocaleString(locale)} 字`, `${units} / ${target.toLocaleString(locale)} ${pluralEn(target, 'word')}`)
+    : text(`${units} 字`, `${units} ${pluralEn(charCount, 'word')}`)
   const editable = !draft.isReadonly && !draft.isChapterBusy
+  const titleReadOnly = draft.isReadonly || draft.isChapterBusy
+  const [askFinalize, setAskFinalize] = useState(false)
+  const showFinalize = Boolean(
+    stage
+    && stage !== 'final'
+    && stage !== 'archived'
+    && draft.canFinalize
+    && !draft.mergeData,
+  )
+
   const characters = useCharacterStore(s => s.characters)
   const characterNameEntries = useMemo(
     () => characters
@@ -125,6 +132,25 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
       .map(card => ({ characterId: card.characterId!.trim(), name: card.name.trim() })),
     [characters],
   )
+
+  // 有待合并修稿时自动打开合并视图（右栏修稿完成后）。
+  const pending = draft.pendingRevisions.find(revision => revision.id === facts?.mergeable.at(-1))
+  const autoOpened = useRef<number | null>(null)
+  useEffect(() => {
+    if (stage !== 'merge' || !pending || draft.mergeData || autoOpened.current === pending.id) return
+    autoOpened.current = pending.id
+    void draft.openPendingRevision(pending)
+  }, [stage, pending, draft.mergeData, draft.openPendingRevision])
+
+  const mergeVersionLabel = draft.meta
+    ? text(`草稿 v${draft.meta.version}`, `Draft v${draft.meta.version}`)
+    : wordMeta
+
+  const confirmFinalize = () => {
+    setAskFinalize(false)
+    useStageStore.setState({ rightRail: 'run' })
+    void draft.finalize()
+  }
 
   return (
     <div className="stage-ch" data-focus={focus || undefined}>
@@ -134,32 +160,41 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
             <ChapterHead
               chapterNumber={chapterNumber}
               role={blueprint?.role}
-              title={title}
-              step={stage === 'archived' || stage === null ? null : STAGE_STEP[stage]}
+              title={titleDraft}
+              onTitleChange={titleReadOnly ? undefined : onTitleChange}
+              titleReadOnly={titleReadOnly}
               focus={focus}
-              version={draft.meta
-                ? <VersionSwitcher tab={tab} current={draft.meta} label={versionLabel} title={title} onSave={() => draft.save(draft.currentBodyRef.current, true)} />
-                : <span className="stage-ch-version stage-ch-version-chip" role="status">{versionLabel}</span>}
-            />
-          )}
-          {draft.meta && stage && chapterNumber !== undefined && reviewReady && (
-            <ChapterActions
-              key={review.sessionKey}
-              sheetSlot={sheetSlot}
-              tab={tab}
-              stage={stage}
-              chapterNumber={chapterNumber}
-              title={title}
-              draft={draft}
-              facts={facts}
-              review={latest ? { report: latest.content, reviewId: latest.id, snapshot: review.snapshot, cycle: review.cycle, reloadCycle: review.reloadCycle } : null}
-              focus={focus}
+              meta={(
+                <div className="stage-ch-head-meta">
+                  <span className="stage-ch-version stage-ch-version-chip" role="status">
+                    {tab.dirty ? text(`${wordMeta} · 未保存`, `${wordMeta} · unsaved`) : wordMeta}
+                  </span>
+                  {showFinalize && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!draft.canFinalize || draft.isChapterBusy}
+                      onClick={() => setAskFinalize(true)}
+                    >
+                      <BadgeCheck size={14} aria-hidden />{text('定稿', 'Finalize')}
+                    </Button>
+                  )}
+                </div>
+              )}
             />
           )}
           {chapterNumber !== undefined && (
             <div className="stage-ch-notices"><DeletionCleanupNotices projectKey={projectKey} chapterNumber={chapterNumber} /></div>
           )}
-          {!draft.mergeData && (
+          {draft.mergeData ? (
+            <MergeView
+              data={draft.mergeData}
+              versionLabel={mergeVersionLabel}
+              recheck={false}
+              onComplete={draft.completeMerge}
+              onLater={() => draft.closeMerge()}
+            />
+          ) : (
             <div className="stage-ch-prose" data-readonly={!editable || undefined}>
               <CodeMirrorEditor
                 mode="prose"
@@ -172,14 +207,23 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 hideStatusBar
                 characterNameEntries={characterNameEntries}
                 onCharCountChange={setCharCount}
-                onChange={draft.onBodyChange}
+                onChange={onBodyChange}
                 onSave={body => draft.save(body)}
               />
             </div>
           )}
+          {stage === 'final' && chapterNumber !== undefined && (
+            <PostProcessSteps
+              chapterNumber={chapterNumber}
+              publication={tab.finalizationPublication}
+              busy={draft.isChapterBusy}
+              onRetryStep={stepKey => void draft.repairFinalize(stepKey)}
+              onRetryFailed={() => void draft.repairFinalize()}
+              onRetryPublication={() => void draft.retryManuscriptPublication()}
+            />
+          )}
         </article>
       </div>
-      <div ref={setSheetSlot} className="stage-ch-sheet-slot" />
       {focus && (
         <footer className="stage-ch-focusbar" aria-label={text('写作状态', 'Writing status')}>
           {target ? (
@@ -193,6 +237,31 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
           ) : <span>{text(`${units} 字`, `${units} ${pluralEn(charCount, 'word')}`)}</span>}
           <span>{tab.dirty ? text('有未保存的修改', 'Unsaved changes') : text('已保存', 'Saved')}</span>
         </footer>
+      )}
+      {chapterNumber !== undefined && (
+        <InkDialog
+          open={askFinalize}
+          onOpenChange={open => { if (!open) setAskFinalize(false) }}
+          title={text(`定稿第 ${chapterNumber} 章？`, `Finalize chapter ${chapterNumber}?`)}
+          description={text('定稿是这部作品里的一次提交。提交后本章只读，后面的章节都以它为准。', 'Finalizing commits this chapter to the book. It becomes read-only and later chapters build on it.')}
+          footer={(
+            <>
+              <Button variant="secondary" onClick={() => setAskFinalize(false)}>{text('再看看', 'Not yet')}</Button>
+              <Button variant="primary" disabled={!draft.canFinalize} onClick={confirmFinalize}>{text('确认定稿', 'Finalize')}</Button>
+            </>
+          )}
+        >
+          <ul className="stage-ch-commit">
+            <li><b>{text('写入正文。', 'Writes the manuscript.')}</b>{text(`这 ${units} 字成为第 ${chapterNumber} 章正文，同时保存为正文文件。`, `This ${units}-word text becomes chapter ${chapterNumber} and is saved as the manuscript file.`)}</li>
+            <li><b>{text('自动做定稿后处理。', 'Runs post-finalization steps.')}</b>{text('完成后在本章页面显示每一步的结果，失败的步骤可以单独重试。', 'Each step’s result appears on this chapter; a failed step can be retried on its own.')}</li>
+            <li><b>{text('之后不能直接修改。', 'No direct edits afterwards.')}</b>{text('要再改，从版本历史回退为新草稿。', 'To change it again, roll back to a new draft from version history.')}</li>
+          </ul>
+          {tab.dirty && (
+            <Notice tone="info" title={text('还没保存的修改会一并定稿', 'Unsaved edits are included')}>
+              {text('定稿以你现在看到的正文为准。', 'Finalization uses the text exactly as you see it now.')}
+            </Notice>
+          )}
+        </InkDialog>
       )}
     </div>
   )

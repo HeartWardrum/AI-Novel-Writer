@@ -21,8 +21,6 @@ import { localize } from '../i18n/core'
 import { ARCH_STEP_NAMES } from './architecture-step-selection'
 import type { Locale } from '../i18n/types'
 
-import { readPostProcessStatus, getChapterFinalizeScope, getFailedStepLabels } from './workflows/workflow-utils'
-
 export interface GuardResult {
   ok: boolean
   /** 失败时的提示语（给用户看） */
@@ -169,15 +167,14 @@ export async function guardDirectoryGeneration(
   return { ok: true }
 }
 
-// ===== Guard 3：章节写稿前 → 校验章节蓝图存在 =====
+// ===== Guard 3：章节写稿前 → 仅要求已打开作品 =====
 
 /**
- * 章节写稿前的前置校验：
- * 1. 要求 blueprints/ 目录中存在至少一个章节蓝图 JSON 文件。
- * 2. 如果指定了章节号且 > 1，要求前一章已定稿（存在于 manuscript/ 中），否则上下文会断裂。
+ * 章节写稿前的前置校验：只要求当前有打开的作品。
+ * 蓝图、角色卡、前章定稿均为可选上下文，不再阻断写稿。
  */
 export async function guardChapterWriting(
-  targetChapterNumber?: number,
+  _targetChapterNumber?: number,
   expectedProjectPath?: string,
   expectedProjectSession?: ProjectSessionContext,
   uiLocale: Locale = useLocaleStore.getState().locale,
@@ -189,66 +186,6 @@ export async function guardChapterWriting(
       message: localize(uiLocale, '请先打开或新建一个项目。', 'Open or create a project first.'),
     }
   }
-
-  const { projectPath, projectSession } = captured
-  const blueprints = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-get-all', projectPath)
-  if (blueprints.length === 0) {
-    return {
-      ok: false,
-      message: localize(
-        uiLocale,
-        '尚未生成章节蓝图（数据库为空）。\n\n请先在「章节蓝图」中点击「AI 生成蓝图」，让 AI 规划每章内容后，再回来写稿。',
-        'No chapter blueprints have been generated (the database is empty).\n\nGenerate chapter blueprints first, then return to draft the chapter.',
-      ),
-      action: 'open-blueprint',
-    }
-  }
-
-  // 检查角色卡是否存在（不变量 1 的反向约束：无角色卡则阻断写稿）
-  const chars = await ipc.invokeWithProjectSession(projectSession, 'db:character-get-all', projectPath)
-  if (chars.length === 0) {
-    return {
-      ok: false,
-      message: localize(
-        uiLocale,
-        '角色卡不存在（数据库中没有角色记录）。\n\nAI 写稿需要角色状态作为上下文，请先在架构里生成角色名单，或手动添加角色。',
-        'No character cards exist (the database has no character records).\n\nAI drafting needs character state as context. Generate the cast in the architecture, or add characters manually.',
-      ),
-    }
-  }
-
-  // 如果指定了且不是第一章，则必须保证前一章已经存在正文库（定稿状态）
-  if (targetChapterNumber && targetChapterNumber > 1) {
-    const prevChapter = targetChapterNumber - 1
-    const prevDraftMeta = await ipc.invokeWithProjectSession(projectSession, 'db:draft-get-finalized', prevChapter, projectPath)
-    if (!prevDraftMeta) {
-      return {
-        ok: false,
-        message: localize(
-          uiLocale,
-          `上下文缺失：第 ${prevChapter} 章尚未定稿！\n\n为了保证 AI 写稿时能读取到连贯的上下文（前章结尾和剧情要点），请必须先前往草稿箱完成第 ${prevChapter} 章的定稿操作。`,
-          `Missing context: Chapter ${prevChapter} has not been finalized.\n\nFinalize Chapter ${prevChapter} first so AI drafting can read a continuous context, including the previous ending and plot notes.`,
-        ),
-      }
-    }
-
-    // 不变量 2 的反向约束：前一章定稿后处理必须全部通过
-    const prevScope = getChapterFinalizeScope(prevChapter)
-    const prevStatus = await readPostProcessStatus(projectPath, prevScope, projectSession)
-    if (prevStatus && !prevStatus.allCriticalPassed) {
-      const failedLabels = getFailedStepLabels(prevStatus)
-      return {
-        ok: false,
-        message: localize(
-          uiLocale,
-          `第 ${prevChapter} 章的定稿后处理未完成！\n\n以下关键步骤失败：\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\n请先在草稿箱中点击「修复定稿」按钮补全数据，否则后续章节的 AI 上下文将不完整。`,
-          `Chapter ${prevChapter} finalization post-processing is incomplete.\n\nFailed critical steps:\n${failedLabels.map(f => `• ${f}`).join('\n')}\n\nRepair the finalization from Drafts first, or later chapters will have incomplete AI context.`,
-        ),
-      }
-    }
-    // 如果状态文件不存在（旧版定稿）→ 兼容放行
-  }
-
   return { ok: true }
 }
 

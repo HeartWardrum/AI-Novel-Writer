@@ -51,15 +51,15 @@ const WRITING = facts({
   runningChapters: new Set([6]),
 })
 
-describe('四个阶段的状态由项目数据派生', () => {
-  it('新作品：设定进行中并写明还差哪几项，其余三步未开始', () => {
+describe('三个阶段的状态由项目数据派生', () => {
+  it('新作品：设定进行中并写明还差哪几项，其余两步未开始', () => {
     const stages = deriveStages(facts({
       config: { coreOutline: '', genre: '悬疑', targetAudience: '', totalChapters: 24, wordsPerChapter: 3000 },
       architecture: {}, blueprints: [],
     }))
-    expect(stages.map(status => status.stage)).toEqual(['setup', 'architecture', 'blueprint', 'manuscript'])
+    expect(stages.map(status => status.stage)).toEqual(['setup', 'architecture', 'manuscript'])
     expect(stages[0]).toEqual({ stage: 'setup', missing: ['coreOutline', 'targetAudience'], progress: { state: 'active', ratio: 0.5 } })
-    expect(stages.slice(1).map(status => status.progress)).toEqual([{ state: 'todo' }, { state: 'todo' }, { state: 'todo' }])
+    expect(stages.slice(1).map(status => status.progress)).toEqual([{ state: 'todo' }, { state: 'todo' }])
     expect(landingStage(stages)).toBe('setup')
   })
 
@@ -68,28 +68,24 @@ describe('四个阶段的状态由项目数据派生', () => {
     expect(setup).toMatchObject({ missing: ['length'], progress: { state: 'active', ratio: 0.75 } })
   })
 
-  it('架构按已有内容的节数计进度；蓝图按 ia.md 至少 1 章即完成', () => {
+  it('架构按已有内容的节数计进度；无蓝图阶段，架构未完则落在架构，有正文则落在正文', () => {
     const stages = deriveStages(facts({ architecture: { premise: true, characters: true }, blueprints: blueprints(3) }))
     expect(stages[0].progress).toEqual({ state: 'done' })
     expect(stages[1]).toMatchObject({ filled: 2, total: 4, progress: { state: 'active', ratio: 0.5 } })
-    expect(stages[2]).toMatchObject({ planned: 3, total: 12, progress: { state: 'done' } })
-    expect(stages[3].progress).toEqual({ state: 'todo' })
-    // 用户决定 B（#394 §6）：已有蓝图时架构没写完不拉回架构，落点跳到下一个未完成的阶段。
-    expect(landingStage(stages)).toBe('manuscript')
+    expect(stages[2].progress).toEqual({ state: 'todo' })
+    expect(landingStage(stages)).toBe('architecture')
     expect(landingStage(deriveStages(facts({ architecture: { premise: true, characters: true }, blueprints: [] })))).toBe('architecture')
-    // 已有正文就落在写作位置：没有蓝图（大纲没写完或已写完）也不落到空的蓝图页。
     const written = { blueprints: [], drafts: { 1: [draft(1, 1, 'finalized')] } }
     expect(landingStage(deriveStages(facts({ ...written, architecture: { premise: true, characters: true } })))).toBe('manuscript')
     expect(landingStage(deriveStages(facts(written)))).toBe('manuscript')
     expect(deriveStages(facts({ blueprints: [] }))[2].progress).toEqual({ state: 'todo' })
   })
 
-  it('分批规划的作品（100 章规划了 20 章）写到第 5 章时，蓝图已完成，落点是正文', () => {
+  it('规划 100 章、写到第 5 章时，落点是正文', () => {
     const partial = facts({ config: { ...READY_CONFIG, totalChapters: 100 }, blueprints: blueprints(20),
       drafts: { 1: [draft(1, 1, 'finalized')], 5: [draft(5, 1, 'draft')] } })
     const stages = deriveStages(partial)
-    expect(stages[2]).toMatchObject({ planned: 20, total: 100, progress: { state: 'done' } })
-    expect(stages[3]).toMatchObject({ finalized: 1, total: 100, progress: { state: 'active', ratio: 0.01 } })
+    expect(stages[2]).toMatchObject({ finalized: 1, total: 100, progress: { state: 'active', ratio: 0.01 } })
     expect(landingStage(stages)).toBe('manuscript')
     expect(focusChapter(deriveChapters(partial))?.number).toBe(5)
   })
@@ -101,7 +97,7 @@ describe('四个阶段的状态由项目数据派生', () => {
     } })
     const rows = deriveChapters(reverted)
     expect([rows[0].phase, rows[0].draft?.version, rows[1].phase, rows[1].draft?.version]).toEqual(['draft', 3, 'final', 2])
-    expect(deriveStages(reverted)[3]).toMatchObject({ finalized: 1 })
+    expect(deriveStages(reverted)[2]).toMatchObject({ finalized: 1 })
     expect(focusChapter(rows)?.number).toBe(1)
   })
 
@@ -112,17 +108,17 @@ describe('四个阶段的状态由项目数据派生', () => {
     } })
     const rows = deriveChapters(olderFinalized)
     expect([rows[0].phase, rows[0].draft?.version, rows[1].phase, rows[1].draft?.version]).toEqual(['final', 2, 'draft', 4])
-    expect(deriveStages(olderFinalized)[3]).toMatchObject({ finalized: 1 })
+    expect(deriveStages(olderFinalized)[2]).toMatchObject({ finalized: 1 })
   })
 
-  it('开始写作后正文按定稿比例进行中；全部定稿后四步都完成', () => {
+  it('开始写作后正文按定稿比例进行中；全部定稿后三步都完成', () => {
     const writing = deriveStages(WRITING)
-    expect(writing.map(status => status.progress.state)).toEqual(['done', 'done', 'done', 'active'])
-    expect(writing[3]).toMatchObject({ finalized: 2, total: 12, progress: { ratio: 2 / 12 } })
+    expect(writing.map(status => status.progress.state)).toEqual(['done', 'done', 'active'])
+    expect(writing[2]).toMatchObject({ finalized: 2, total: 12, progress: { ratio: 2 / 12 } })
     expect(landingStage(writing)).toBe('manuscript')
 
     const done = deriveStages(facts({ drafts: Object.fromEntries(blueprints(12).map(({ chapterNumber }) => [chapterNumber, [draft(chapterNumber, 1, 'finalized')]])) }))
-    expect(done.map(status => status.progress.state)).toEqual(['done', 'done', 'done', 'done'])
+    expect(done.map(status => status.progress.state)).toEqual(['done', 'done', 'done'])
   })
 
   it('章节状态来自草稿与定稿：定稿优先，其余取最新的未归档稿，正在生成的章另外标出', () => {
@@ -160,13 +156,13 @@ describe('流程脊', () => {
 
   const stageRows = (container: HTMLElement) => [...container.querySelectorAll<HTMLButtonElement>('[data-stage]')]
 
-  it('四个阶段按 设定、架构、蓝图、正文 排列，各自显示状态，当前阶段标为当前页', async () => {
+  it('三个阶段按 设定、架构、正文 排列，各自显示状态，当前阶段标为当前页', async () => {
     const container = await mount({ kind: 'stage', stage: 'manuscript', chapter: 3 })
     const rows = stageRows(container)
-    expect(rows.map(row => row.querySelector('.stage-row-name')?.textContent)).toEqual(['设定', '架构', '蓝图', '正文'])
-    expect(rows.map(row => row.dataset.state)).toEqual(['done', 'done', 'done', 'active'])
-    expect(rows.map(row => row.querySelector('.stage-row-meta')?.textContent)).toEqual(['完成', '4 / 4', '12 章', '2 / 12 定稿'])
-    expect(rows.map(row => row.getAttribute('aria-current'))).toEqual([null, null, null, 'page'])
+    expect(rows.map(row => row.querySelector('.stage-row-name')?.textContent)).toEqual(['设定', '架构', '正文'])
+    expect(rows.map(row => row.dataset.state)).toEqual(['done', 'done', 'active'])
+    expect(rows.map(row => row.querySelector('.stage-row-meta')?.textContent)).toEqual(['完成', '4 / 4', '2 / 12 定稿'])
+    expect(rows.map(row => row.getAttribute('aria-current'))).toEqual([null, null, 'page'])
     expect(container.querySelector('nav')?.getAttribute('aria-label')).toBe('创作流程')
     expect(rows[0].closest('ol')).not.toBeNull()
   })
@@ -181,20 +177,6 @@ describe('流程脊', () => {
     ])
     expect(chapters[0].querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('定稿')
     expect(chapters.map(row => row.getAttribute('aria-current'))).toEqual([null, null, 'page', ...Array(9).fill(null)])
-  })
-
-  it('蓝图已完成但没规划完时，说明写已规划与规划总章数', async () => {
-    host = document.createElement('div')
-    host.className = 'paper-ink stage-shell'
-    document.body.append(host)
-    root = createRoot(host)
-    const partial = facts({ config: { ...READY_CONFIG, totalChapters: 100 }, blueprints: blueprints(20) })
-    await act(async () => root!.render(
-      <StageSpine stages={deriveStages(partial)} chapters={deriveChapters(partial)} location={null}
-        onStage={() => undefined} onChapter={() => undefined} onResource={() => undefined} onSettings={() => undefined} />,
-    ))
-    const blueprint = host.querySelector('[data-stage="blueprint"]')!
-    expect([blueprint.getAttribute('data-state'), blueprint.querySelector('.stage-row-meta')?.textContent]).toEqual(['done', '20 / 100 章'])
   })
 
   it('没设规划章数时正文说明写已定稿章数，不写 0 / 0；没有章名的章用「第 N 章」', async () => {
@@ -212,17 +194,16 @@ describe('流程脊', () => {
   })
 
   it('不在正文阶段时不展开章节列表', async () => {
-    const container = await mount({ kind: 'stage', stage: 'blueprint' })
+    const container = await mount({ kind: 'stage', stage: 'architecture' })
     expect(container.querySelector('[aria-label="章节"]')).toBeNull()
-    expect(stageRows(container).map(row => row.getAttribute('aria-current'))).toEqual([null, null, 'page', null])
+    expect(stageRows(container).map(row => row.getAttribute('aria-current'))).toEqual([null, 'page', null])
   })
 
   it('Tab 到当前阶段行时焦点环叠在当前行的浮起阴影上', async () => {
-    const container = await mount({ kind: 'stage', stage: 'blueprint' })
+    const container = await mount({ kind: 'stage', stage: 'architecture' })
     await userEvent.tab()
     await userEvent.tab()
-    await userEvent.tab()
-    const current = stageRows(container)[2]
+    const current = stageRows(container)[1]
     expect(document.activeElement).toBe(current)
     expect(getComputedStyle(current).boxShadow).toMatch(/^rgb\(255, 254, 251\) 0px 0px 0px 2px, rgb\(44, 74, 140\) 0px 0px 0px 4px, /)
   })
@@ -247,33 +228,13 @@ describe('流程脊', () => {
     expect(rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1).toBe(true)
   })
 
-  it('英文界面里只规划了一章时写 1 chapter，不写 1 chapters', async () => {
-    useLocaleStore.setState({ locale: 'en-US' })
-    try {
-      host = document.createElement('div')
-      host.className = 'paper-ink stage-shell'
-      document.body.append(host)
-      root = createRoot(host)
-      const meta = async (total: number) => {
-        const one = facts({ config: { ...READY_CONFIG, totalChapters: total }, blueprints: blueprints(1) })
-        await act(async () => root!.render(<StageSpine stages={deriveStages(one)} chapters={deriveChapters(one)} location={null}
-          onStage={() => undefined} onChapter={() => undefined} onResource={() => undefined} onSettings={() => undefined} />))
-        return host!.querySelector('[data-stage="blueprint"] .stage-row-meta')?.textContent
-      }
-      expect(await meta(1)).toBe('1 chapter')
-      expect(await meta(0)).toBe('1 chapter')
-    } finally {
-      useLocaleStore.setState({ locale: 'zh-CN' })
-    }
-  })
-
   it('点击阶段、章节、作品资料与设置时，回调收到对应的去处', async () => {
     const spy = vi.fn()
     const container = await mount({ kind: 'stage', stage: 'manuscript', chapter: 3 }, spy)
-    await act(async () => stageRows(container)[2].click())
+    await act(async () => stageRows(container)[1].click())
     await act(async () => container.querySelectorAll<HTMLButtonElement>('[aria-label="章节"] button')[3].click())
     await act(async () => container.querySelector<HTMLButtonElement>('[data-resource="knowledge"]')!.click())
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '设置')!.click())
-    expect(spy.mock.calls).toEqual([['stage', 'blueprint'], ['chapter', 4], ['resource', 'knowledge'], ['settings']])
+    expect(spy.mock.calls).toEqual([['stage', 'architecture'], ['chapter', 4], ['resource', 'knowledge'], ['settings']])
   })
 })

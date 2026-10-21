@@ -13,8 +13,10 @@ import { useProjectStore } from '../../stores/project-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
 import { useLocaleStore } from '../../stores/locale-store'
-import type { AgentMode } from '../../stores/agent-store'
 import { toolRegistry, type AgentExecutionContext } from './tool-registry'
+
+/** 遗留 Agent 路径的工作模式（工作台直连对话已不再使用） */
+type AgentMode = 'planning' | 'fast'
 import {
   projectSessionContextFromProject,
   sameProjectSessionContext,

@@ -152,20 +152,19 @@ async function definitionFor(
       project.path,
     )
     currentProjectFor(projectSession)
-    if (!blueprint) {
-      throw new Error(`第 ${intent.chapterNumber} 章蓝图不存在；请先运行 generate_blueprint 工作流`)
-    }
+    const chapterNumber = intent.chapterNumber
+    const defaultTitle = uiLocale === 'en-US' ? `Chapter ${chapterNumber}` : `第 ${chapterNumber} 章`
     const model = useLLMStore.getState().models.find(item => item.id === generationModelId)
     return createChapterWorkflow({
       projectPath: project.path,
-      chapterNumber: blueprint.chapterNumber,
-      title: blueprint.title,
-      role: blueprint.role,
-      purpose: blueprint.purpose,
-      characters: blueprint.characters,
-      keyEvents: blueprint.keyEvents,
-      suspenseHook: blueprint.suspenseHook,
-      userGuidance: blueprint.userGuidance,
+      chapterNumber,
+      title: blueprint?.title?.trim() || defaultTitle,
+      role: blueprint?.role ?? '',
+      purpose: blueprint?.purpose ?? '',
+      characters: blueprint?.characters ?? [],
+      keyEvents: blueprint?.keyEvents ?? '',
+      suspenseHook: blueprint?.suspenseHook ?? '',
+      userGuidance: blueprint?.userGuidance ?? '',
       wordsTarget: normalizeChapterWordsTarget(project.novelConfig.wordsPerChapter),
     }, projectSession, {
       generationModelId,

@@ -12,7 +12,7 @@
   --stage-legacy-accent: color-mix(in srgb, var(--accent) 55%, var(--frame));
 }
 
-.stage-shell :where(.stage-content, .stage-library, .stage-sheet-slot, .stage-set-legacy), .pi-overlay-host {
+.stage-shell :where(.stage-content, .stage-library, .stage-sheet-slot, .workbench-right, .stage-set-legacy), .pi-overlay-host {
   --color-bg: var(--surface);
   --color-sidebar: var(--surface-2);
   --color-panel: var(--surface-2);

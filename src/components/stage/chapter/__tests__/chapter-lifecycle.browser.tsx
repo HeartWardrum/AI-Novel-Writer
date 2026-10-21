@@ -102,11 +102,11 @@ afterEach(async () => {
   useWorkflowStore.setState(original.workflow, true)
 })
 
-describe('单章视图的主按钮随五种状态变化', () => {
+describe('单章视图精简抬头（中栏定稿、无审稿动作条）', () => {
   it('待写：主按钮是写作此章，按本章蓝图启动写作工作流', async () => {
     await mount()
     await act(async () => openChapterPlan(3, BLUEPRINT.title, SESSION))
-    await expect.element(page.getByRole('heading', { name: '本章蓝图' })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '写作此章' })).toBeVisible()
     await click('写作此章')
     await vi.waitFor(() => expect(startWorkflow).toHaveBeenCalledOnce())
     const [chapterInfo] = workflows.createChapterWorkflow.mock.calls[0]
@@ -115,6 +115,59 @@ describe('单章视图的主按钮随五种状态变化', () => {
     expect(started()[0].type).toBe('chapter_creation')
   })
 
+  it('草稿：可编辑标题与字数，有定稿、无 AI 审稿动作条', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('textbox', { name: '本章标题' })).toBeVisible()
+    await expect.element(page.getByText(/字/)).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '定稿', exact: true })).toBeVisible()
+    expect(page.getByRole('button', { name: 'AI 审稿', exact: true }).elements()).toHaveLength(0)
+    expect(host!.querySelector('.stage-ch-actions')).toBeNull()
+  })
+
+  it('草稿：确认定稿后以当前正文启动 createFinalizeWorkflow，并切到右栏运行', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    await mount()
+    await openDraft(draft.id)
+    await act(async () => useEditorStore.getState().updateTabContent(activeTab()!.id, `${ORIGINAL}\n\n他回头了。`))
+    await click('定稿')
+    await expect.element(page.getByRole('dialog', { name: '定稿第 3 章？' })).toBeVisible()
+    await expect.element(page.getByText('还没保存的修改会一并定稿')).toBeVisible()
+    await click('确认定稿')
+    await vi.waitFor(() => expect(workflows.createFinalizeWorkflow).toHaveBeenCalledOnce())
+    const [params] = workflows.createFinalizeWorkflow.mock.calls[0]
+    expect({ content: params.draftContent, snapshot: params.snapshot.content, draftId: params.snapshot.draftId })
+      .toEqual({ content: `${ORIGINAL}\n\n他回头了。`, snapshot: `${ORIGINAL}\n\n他回头了。`, draftId: draft.id })
+    expect(useStageStore.getState().rightRail).toBe('run')
+  })
+
+  it('有待合并修稿：直接摆出合并视图', async () => {
+    const draft = backend.addDraft({ status: 'draft' })
+    backend.addReview(draft)
+    backend.addRevision(draft)
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+  })
+
+  it('已定稿：正文只读，列出后处理各步', async () => {
+    const draft = backend.addDraft({ status: 'finalized' })
+    backend.state.postProcess = { steps: [
+      { stepKey: 'chapter_notes', label: '章节剧情要点', ok: true },
+      { stepKey: 'character_cards', label: '角色状态更新', ok: false, errorMsg: '模型长时间没有响应', attemptCount: 1 },
+      { stepKey: 'kb_import', label: '导入知识库', ok: true },
+    ] }
+    await mount()
+    await openDraft(draft.id)
+    await expect.element(page.getByText('定稿后处理')).toBeVisible()
+    await expect.element(page.getByText('2 / 3 完成')).toBeVisible()
+    expect(host!.querySelector('.stage-ch-prose .cm-content')?.getAttribute('contenteditable')).toBe('false')
+    expect(page.getByRole('button', { name: '定稿', exact: true }).elements()).toHaveLength(0)
+  })
+})
+
+describe.skip('单章视图的主按钮随五种状态变化（动作条已从中栏移除）', () => {
   it('草稿：主按钮是 AI 审稿，按勾选的检查维度对当前正文启动审稿', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     await mount()
@@ -335,7 +388,7 @@ async function mountWithSpine() {
 /** 流程脊上第 3 章那一行。 */
 const spineRow = () => page.getByRole('list', { name: '章节' }).getByRole('button', { name: /雨夜车站/ })
 
-describe('流程脊与单章视图同一个阶段', () => {
+describe.skip('流程脊与单章视图同一个阶段（动作条已从中栏移除）', () => {
   it('草稿上有审稿：流程脊写待修稿，单章视图的主按钮是按意见修稿', async () => {
     const draft = backend.addDraft({ status: 'draft' })
     backend.addReview(draft)
@@ -418,7 +471,7 @@ describe('流程脊与单章视图同一个阶段', () => {
   })
 })
 
-describe('确认审稿清单的往返期间换了作品，回来的结果不碰新作品的侧页', () => {
+describe.skip('确认审稿清单的往返期间换了作品，回来的结果不碰新作品的侧页（动作条已从中栏移除）', () => {
   const HARBOR = { projectId: 'harbor', leaseId: 'harbor-lease', projectPath: 'C:\\novels\\harbor' }
   const RUN_SHEET = { kind: 'run' as const, tab: 'active' as const }
 

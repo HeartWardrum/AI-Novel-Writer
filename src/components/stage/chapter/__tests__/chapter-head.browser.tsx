@@ -27,7 +27,7 @@ afterEach(async () => {
 
 async function eyebrow(locale: Locale, role: string): Promise<string> {
   useLocaleStore.setState({ locale })
-  await act(async () => root!.render(<ChapterHead chapterNumber={3} role={role} title="雾钟" version={null} step={0} focus={false} />))
+  await act(async () => root!.render(<ChapterHead chapterNumber={3} role={role} title="雾钟" titleReadOnly focus={false} />))
   return host!.querySelector('.stage-ch-eyebrow')!.textContent ?? ''
 }
 

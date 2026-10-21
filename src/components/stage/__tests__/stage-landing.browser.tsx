@@ -73,15 +73,25 @@ afterEach(async () => {
 
 describe('打开作品时的落点', () => {
   it('同一部作品重新打开（新的项目会话）时再落一次', async () => {
-    await open(session('first'), { ...READY, coreOutline: '' })
+    const first = session('first')
+    await open(first, { ...READY, coreOutline: '' })
+    await act(async () => {
+      useStageStore.setState({ work: { session: first, architecture: {}, blueprints: [] } })
+      useDraftStore.setState({ dataProjectSession: first, loading: false, draftsByChapter: {} })
+    })
     await act(async () => root!.render(<Landing />))
-    expect(tabTypes()).toEqual(['config'])
+    await vi.waitFor(() => expect(tabTypes()).toEqual(['chapter']))
 
-    await open(session('reopened'), { ...READY, coreOutline: '' })
-    expect(tabTypes()).toEqual(['config'])
+    const reopened = session('reopened')
+    await open(reopened, { ...READY, coreOutline: '' })
+    await act(async () => {
+      useStageStore.setState({ work: { session: reopened, architecture: {}, blueprints: [] } })
+      useDraftStore.setState({ dataProjectSession: reopened, loading: false, draftsByChapter: {} })
+    })
+    await vi.waitFor(() => expect(tabTypes()).toEqual(['chapter']))
   })
 
-  it('草稿还没按这次会话载入完时不落；载入完才落到第一个未完成的阶段', async () => {
+  it('草稿还没按这次会话载入完时不落；载入完才落到正文', async () => {
     const current = session('current')
     await open(current, READY)
     await act(async () => {
@@ -95,7 +105,7 @@ describe('打开作品时的落点', () => {
     expect(tabTypes()).toEqual([])
 
     await act(async () => useDraftStore.setState({ loading: false }))
-    expect(tabTypes()).toEqual(['world-building'])
+    await vi.waitFor(() => expect(tabTypes()).toEqual(['chapter']))
   })
 
   it('作者在落点之前打开了搜索：落点照常打开，搜索不被关掉', async () => {
@@ -109,7 +119,7 @@ describe('打开作品时的落点', () => {
     await act(async () => useStageStore.setState({ palette: 'commands' }))
 
     await act(async () => useDraftStore.setState({ loading: false }))
-    expect(tabTypes()).toEqual(['world-building'])
+    await vi.waitFor(() => expect(tabTypes()).toEqual(['chapter']))
     expect(useStageStore.getState().palette).toBe('commands')
   })
 
@@ -138,8 +148,8 @@ describe('打开作品时的落点', () => {
     return { type: active?.type, chapter: active?.chapterNumber }
   }
 
-  it('大纲没写完、也还没有蓝图与正文：落在架构', async () => {
-    expect(await landWith([], {})).toEqual({ type: 'world-building', chapter: undefined })
+  it('大纲没写完、也还没有蓝图与正文：仍落在正文第 1 章', async () => {
+    expect(await landWith([], {})).toEqual({ type: 'chapter', chapter: 1 })
   })
 
   it('大纲没写完但已有蓝图：落在当前该写的那一章，不拉回架构', async () => {
@@ -164,8 +174,8 @@ describe('打开作品时的落点', () => {
       .toEqual({ type: 'chapter', chapter: 1 })
   })
 
-  it('大纲没写完、只有一份空的当前稿、没有蓝图：空稿不算开始，落在架构', async () => {
-    expect(await landWith([], { 1: [{ ...draft(1, 'draft'), wordCount: 0 }] })).toEqual({ type: 'world-building', chapter: undefined })
+  it('大纲没写完、只有一份空的当前稿、没有蓝图：空稿不算开始，仍落在第 1 章', async () => {
+    expect(await landWith([], { 1: [{ ...draft(1, 'draft'), wordCount: 0 }] })).toEqual({ type: 'chapter', chapter: 1 })
   })
 
   it('上一次打开留下的架构与蓝图数据不算这次的', async () => {
@@ -245,7 +255,7 @@ describe('打开作品时流程脊等各稿的审稿与修稿记录', () => {
     release(0)
     await flush()
     expect(refreshed).toBe(true)
-    expect(spine()).toEqual(['setup', 'architecture', 'blueprint', 'manuscript', '1:final', '2:draft', '3:reviewed', '4:draft'])
+    expect(spine()).toEqual(['setup', 'architecture', 'manuscript', '1:final', '2:draft', '3:reviewed', '4:draft'])
   })
 
   it('落点那一章就是有审稿的章：单章视图对同一稿的读取还没回来，流程脊出现时这一章也已是读到的阶段', async () => {
@@ -263,10 +273,10 @@ describe('打开作品时流程脊等各稿的审稿与修稿记录', () => {
 
     release(0)
     await flush()
-    expect(spine()).toEqual(['setup', 'architecture', 'blueprint', 'manuscript', '1:final', '2:final', '3:reviewed', '4:todo'])
+    expect(spine()).toEqual(['setup', 'architecture', 'manuscript', '1:final', '2:final', '3:reviewed', '4:todo'])
 
     release(1)
     await flush()
-    expect(spine()).toEqual(['setup', 'architecture', 'blueprint', 'manuscript', '1:final', '2:final', '3:reviewed', '4:todo'])
+    expect(spine()).toEqual(['setup', 'architecture', 'manuscript', '1:final', '2:final', '3:reviewed', '4:todo'])
   })
 })

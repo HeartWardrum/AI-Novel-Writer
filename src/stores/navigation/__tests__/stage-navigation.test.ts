@@ -2,12 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ProjectData } from '../../../shared/ipc-channels'
 import type { DraftMeta } from '../../../services/draft-index'
+import { ipc } from '../../../services/ipc-client'
+import { formatResourceUri } from '../../../shared/project-paths'
 import { useDraftStore } from '../../draft-store'
 import { useEditorStore } from '../../editor-store'
 import { useLayoutStore } from '../../layout-store'
 import { useProjectStore } from '../../project-store'
 import { navigate, type NavigationIntent } from '../navigation-intents'
 import { useStageStore } from '../stage-store'
+
+vi.mock('../../../services/ipc-client', () => ({
+  ipc: { invokeWithProjectSession: vi.fn() },
+}))
 
 const PROJECT_PATH = 'C:\\novels\\stage'
 const SESSION = { projectId: 'stage', leaseId: 'lease-1', projectPath: PROJECT_PATH }
@@ -19,12 +25,35 @@ const originalEditor = useEditorStore.getState()
 const originalProject = useProjectStore.getState()
 const originalStage = useStageStore.getState()
 
+/** 无稿点章时 ensureEmptyChapterDraft 用到的 IPC。 */
+function mockEmptyDraftCreate(chapterNumber: number, draftId = 100 + chapterNumber) {
+  const meta = {
+    id: draftId,
+    chapterNumber,
+    version: 1,
+    status: 'draft',
+    source: 'write',
+    wordCount: 0,
+    createdAt: '2026-10-13 20:00:00',
+    updatedAt: '2026-10-13 20:00:00',
+  }
+  vi.mocked(ipc.invokeWithProjectSession).mockImplementation(async (_session, channel, ...args) => {
+    if (channel === 'db:draft-next-version') return 1
+    if (channel === 'db:draft-create') return { success: true, id: draftId }
+    if (channel === 'db:draft-list') return Number(args[0]) === chapterNumber ? [meta] : []
+    if (channel === 'db:draft-get-full') return Number(args[0]) === draftId ? { ...meta, content: '' } : null
+    throw new Error(`Unexpected channel: ${channel}`)
+  })
+  return { draftId, filePath: formatResourceUri({ kind: 'draft', id: draftId }) }
+}
+
 beforeEach(() => {
+  vi.mocked(ipc.invokeWithProjectSession).mockReset()
   useLayoutStore.setState({ sidebarView: 'home', settingsOpen: false })
   useEditorStore.setState({ tabs: [], activeTabId: null })
   useDraftStore.setState({ draftsByChapter: {}, loading: false, dataProjectSession: SESSION })
   useProjectStore.setState({ currentProject: { id: 'stage', sessionLease: 'lease-1', name: '灯塔', path: PROJECT_PATH } as ProjectData })
-  useStageStore.setState({ sheet: { kind: 'run', tab: 'diagnostics' }, focus: true, palette: 'commands', work: null, closingTabId: null })
+  useStageStore.setState({ sheet: { kind: 'run', tab: 'diagnostics' }, focus: true, palette: 'commands', work: null, closingTabId: null, writeRequest: null })
 })
 
 afterEach(() => {
@@ -46,17 +75,46 @@ describe('新外壳下 navigate 的落点，调用方与旧外壳相同', () => 
     expect(tabTypes()).toEqual([])
   })
 
-  it('阶段与资料页各开一个标签，再次打开时切回同一个标签', () => {
+  it('阶段与资料页各开一个标签，再次打开时切回同一个标签；蓝图重定向到正文', async () => {
     navigate({ kind: 'stage', stage: 'setup' })
     navigate({ kind: 'stage', stage: 'architecture' })
-    navigate({ kind: 'stage', stage: 'blueprint' })
     navigate({ kind: 'resource', page: 'plot' })
     navigate({ kind: 'resource', page: 'knowledge' })
     navigate({ kind: 'resource', page: 'history' })
     navigate({ kind: 'stage', stage: 'setup' })
-    expect(tabTypes()).toEqual(['config', 'world-building', 'chapter-card', 'narrative-thread', 'knowledge', 'version-history'])
+    expect(tabTypes()).toEqual(['config', 'world-building', 'narrative-thread', 'knowledge', 'version-history'])
     expect(useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)?.type).toBe('config')
     expect(useStageStore.getState().focus).toBe(false)
+
+    mockEmptyDraftCreate(1)
+    useStageStore.setState({
+      work: {
+        session: SESSION,
+        architecture: {},
+        blueprints: [],
+      },
+    })
+    useProjectStore.setState({
+      currentProject: {
+        id: 'stage', sessionLease: 'lease-1', name: '灯塔', path: PROJECT_PATH,
+        novelConfig: { totalChapters: 3, wordsPerChapter: 2000 },
+      } as ProjectData,
+    })
+    navigate({ kind: 'stage', stage: 'blueprint' })
+    await vi.waitFor(() => {
+      expect(useEditorStore.getState().tabs.some(tab => tab.type === 'chapter' && tab.filePath)).toBe(true)
+    })
+    expect(useEditorStore.getState().tabs.some(tab => tab.type === 'chapter-card')).toBe(false)
+  })
+
+  it('无稿点章：自动建空草稿并打开可编辑正文标签', async () => {
+    const { filePath } = mockEmptyDraftCreate(2)
+    navigate({ kind: 'chapter', chapterNumber: 2 })
+    await vi.waitFor(() => expect(activeTab()).toMatchObject({
+      type: 'chapter', chapterNumber: 2, filePath,
+    }))
+    expect(vi.mocked(ipc.invokeWithProjectSession).mock.calls.some(([, channel]) => channel === 'db:draft-create')).toBe(true)
+    expect(useStageStore.getState().writeRequest).toBeNull()
   })
 
   it('运行意图打开运行侧页：输出与任务落到进行中并带上运行，日志与模型调用落到诊断', () => {
@@ -76,11 +134,12 @@ describe('新外壳下 navigate 的落点，调用方与旧外壳相同', () => 
     expect(useStageStore.getState().focus).toBe(true)
   })
 
-  it('写作此章不再打开旧的创作对话框，也不落到蓝图：打开这一章的单章视图，写作请求留给那里的写作按钮', async () => {
+  it('写作此章不再打开旧的创作对话框，也不落到蓝图：打开待写单章视图，不建空稿，写作请求留给那里的写作按钮', async () => {
     navigate({ kind: 'chapter', chapterNumber: 3, write: WRITE })
     await vi.waitFor(() => expect(activeTab()).toMatchObject({ type: 'chapter', chapterNumber: 3, filePath: undefined }))
     expect(tabTypes()).toEqual(['chapter'])
     expect(useStageStore.getState()).toMatchObject({ focus: false, writeRequest: { chapterNumber: 3 } })
+    expect(vi.mocked(ipc.invokeWithProjectSession)).not.toHaveBeenCalled()
   })
 
   it('写作此章落到已经有稿的章：切到这一稿的标签，写作请求清掉，不留到蓝图页再弹', async () => {

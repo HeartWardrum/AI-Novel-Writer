@@ -8,7 +8,7 @@ import {
   AtSign,
   Workflow,
 } from 'lucide-react'
-import { useAgentStore, type AgentMode } from '../../../stores/agent-store'
+import { useAgentStore } from '../../../stores/agent-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import { useOutsideClick } from '../../../hooks/useOutsideClick'
@@ -25,7 +25,7 @@ const projectInputDrafts = new Map<string, { value: string; savedValue: string }
 
 /**
  * Agent 输入框组件（参考 agent1.html 第 69-155 行）
- * 卡片式圆角容器，底部工具栏含模式/模型/发送
+ * 卡片式圆角容器，底部工具栏含模型/发送
  */
 export default function AgentInputBox() {
   const text = useLocaleStore(s => s.text)
@@ -37,7 +37,7 @@ export default function AgentInputBox() {
     ? (projectInputs.get(projectKey) ?? projectInputDrafts.get(projectKey)?.value ?? '')
     : ''
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { generating, sendMessage, cancelGeneration, getActiveConversation, setMode, setModelId } = useAgentStore()
+  const { generating, sendMessage, cancelGeneration, getActiveConversation, setModelId } = useAgentStore()
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
 
@@ -45,7 +45,6 @@ export default function AgentInputBox() {
   const chatModels = models.filter(m => !(m.purposes.length === 1 && m.purposes[0] === 'embedding'))
 
   const activeConv = getActiveConversation()
-  const currentMode = activeConv?.mode ?? 'planning'
   const currentModelId = activeConv?.modelId ?? defaultModelId
 
   // 找到当前模型信息
@@ -53,7 +52,6 @@ export default function AgentInputBox() {
 
   // 下拉菜单状态
   const [showContextMenu, setShowContextMenu] = useState(false)
-  const [showModeMenu, setShowModeMenu] = useState(false)
   const [showModelMenu, setShowModelMenu] = useState(false)
 
   // / 命令和 @ 提及菜单状态
@@ -156,7 +154,6 @@ export default function AgentInputBox() {
   }, [inputText, replaceInputText])
 
   const contextRef = useRef<HTMLDivElement>(null)
-  const modeRef = useRef<HTMLDivElement>(null)
   const modelRef = useRef<HTMLDivElement>(null)
 
   // 调整文本框高度的通用函数
@@ -194,9 +191,8 @@ export default function AgentInputBox() {
     adjustHeight()
   }, [inputText, adjustHeight])
 
-  // 点击外部关闭下拉（用 useOutsideClick 统一管理三个 ref）
+  // 点击外部关闭下拉
   useOutsideClick(contextRef, () => setShowContextMenu(false), showContextMenu)
-  useOutsideClick(modeRef, () => setShowModeMenu(false), showModeMenu)
   useOutsideClick(modelRef, () => setShowModelMenu(false), showModelMenu)
 
   /** 发送或停止 */
@@ -322,7 +318,6 @@ export default function AgentInputBox() {
             <ToolbarIconBtn
               title={text('添加上下文', 'Add context')}
               onClick={() => {
-                setShowModeMenu(false)
                 setShowModelMenu(false)
                 setShowContextMenu(v => !v)
               }}
@@ -331,70 +326,11 @@ export default function AgentInputBox() {
             </ToolbarIconBtn>
           </div>
 
-          {/* 模式选择 */}
-          <div ref={modeRef} className="relative">
-            <button
-              onClick={() => {
-                setShowContextMenu(false)
-                setShowModelMenu(false)
-                setShowModeMenu(v => !v)
-              }}
-              className="flex items-center gap-0.5 py-1 pl-1 pr-1.5 rounded-md text-xs transition-colors"
-              style={{
-                color: 'var(--color-text-secondary)',
-                opacity: 0.75,
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = 'var(--color-hover)'
-                e.currentTarget.style.opacity = '1'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.opacity = '0.75'
-              }}
-            >
-              <ChevronDown size={13} strokeWidth={1.5} />
-              <span className="select-none">{currentMode === 'planning' ? text('深度', 'Deep') : text('快速', 'Fast')}</span>
-            </button>
-
-            {/* 模式选择下拉 */}
-            {showModeMenu && (
-              <div
-                className="absolute bottom-full left-0 mb-1 z-50 py-1 rounded-lg shadow-lg"
-                style={{
-                  width: 240,
-                  backgroundColor: 'var(--color-sidebar)',
-                  border: '1px solid var(--color-border)',
-                  boxShadow: 'var(--shadow-popover)',
-                }}
-              >
-                <div className="text-[0.7rem] px-3 py-1" style={{ color: 'var(--color-text-muted)' }}>
-                  {text('对话模式', 'Conversation mode')}
-                </div>
-                <ModeMenuItem
-                  mode="planning"
-                  currentMode={currentMode}
-                  label={text('深度模式', 'Deep mode')}
-                  desc={text('先规划后执行，适合深度研究、复杂任务和协同创作', 'Plan before acting for research, complex tasks, and collaborative writing')}
-                  onClick={() => { setMode('planning'); setShowModeMenu(false) }}
-                />
-                <ModeMenuItem
-                  mode="fast"
-                  currentMode={currentMode}
-                  label={text('快速模式', 'Fast mode')}
-                  desc={text('直接执行，适合简单快速任务', 'Act directly for simple, quick tasks')}
-                  onClick={() => { setMode('fast'); setShowModeMenu(false) }}
-                />
-              </div>
-            )}
-          </div>
-
           {/* 模型选择 */}
           <div ref={modelRef} className="relative min-w-0">
             <button
               onClick={() => {
                 setShowContextMenu(false)
-                setShowModeMenu(false)
                 setShowModelMenu(v => !v)
               }}
               className="flex items-center gap-0.5 py-1 pl-0.5 pr-1.5 rounded-md text-xs min-w-0 transition-colors"
@@ -551,43 +487,6 @@ function ContextMenuItem({
       <span style={{ color: 'var(--color-text-secondary)' }}>{icon}</span>
       {label}
       {disabled && <span className="ml-auto text-[0.7rem] opacity-40">{text('即将', 'Soon')}</span>}
-    </button>
-  )
-}
-
-/** 模式菜单项 */
-function ModeMenuItem({
-  mode,
-  currentMode,
-  label,
-  desc,
-  onClick,
-}: {
-  mode: AgentMode
-  currentMode: AgentMode
-  label: string
-  desc: string
-  onClick: () => void
-}) {
-  const isActive = mode === currentMode
-
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex flex-col items-start gap-0.5 px-3 py-2 text-left text-xs transition-colors rounded-md mx-1"
-      style={{
-        width: 'calc(100% - 8px)',
-        backgroundColor: isActive ? 'var(--color-hover)' : 'transparent',
-      }}
-      onMouseEnter={e => {
-        if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-hover)'
-      }}
-      onMouseLeave={e => {
-        if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'
-      }}
-    >
-      <div className="font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
-      <div className="text-left leading-relaxed" style={{ color: 'var(--color-text-muted)', fontSize: "0.75rem" }}>{desc}</div>
     </button>
   )
 }

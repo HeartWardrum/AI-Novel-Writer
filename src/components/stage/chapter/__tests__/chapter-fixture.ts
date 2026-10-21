@@ -88,6 +88,27 @@ export function createChapterBackend() {
     switch (channel) {
       case 'db:blueprint-get-all': return [BLUEPRINT]
       case 'db:blueprint-get': return Number(args[0]) === BLUEPRINT.chapterNumber ? BLUEPRINT : null
+      case 'db:blueprint-upsert': return { success: true }
+      case 'db:draft-next-version': {
+        const chapter = Number(args[0])
+        const versions = state.drafts.filter(draft => draft.chapterNumber === chapter).map(draft => draft.version)
+        return (versions.length > 0 ? Math.max(...versions) : 0) + 1
+      }
+      case 'db:draft-create': {
+        const request = args[0] as { chapterNumber: number; version: number; content?: string }
+        const createdAt = now()
+        const draft: Draft = {
+          id: ++state.nextId,
+          chapterNumber: request.chapterNumber,
+          version: request.version,
+          status: 'draft',
+          content: request.content ?? '',
+          createdAt,
+          updatedAt: createdAt,
+        }
+        state.drafts.push(draft)
+        return { success: true, id: draft.id }
+      }
       case 'db:draft-get-meta': { const draft = byId(args[0]); return draft ? meta(draft) : null }
       case 'db:draft-list': return state.drafts.filter(draft => draft.chapterNumber === Number(args[0])).map(meta)
       case 'db:draft-list-all': return state.drafts.map(meta)

@@ -8,7 +8,7 @@
  */
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
-import type { AgentMessage as AgentMessageType } from '../../../stores/agent-store'
+import type { AgentMessage as AgentMessageType, AgentRequestDebug } from '../../../stores/agent-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import MarkdownContent, { StreamingCursor } from '../../ui/MarkdownContent'
 import ToolCallBlock from './ToolCallBlock'
@@ -20,8 +20,80 @@ interface Props {
   message: AgentMessageType
 }
 
+function RequestDebugPanel({ debug }: { debug: AgentRequestDebug }) {
+  const text = useLocaleStore(state => state.text)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const metaParts = [
+    `${text('模型', '模型')}: ${debug.modelId}`,
+    `${text('历史', '历史')}: ${debug.meta.historyCount}`,
+    `purpose: ${debug.meta.purpose}`,
+    `stage: ${debug.meta.reasoningStage}`,
+  ]
+  if (debug.meta.creativeStrategy) {
+    metaParts.push(`strategy: ${debug.meta.creativeStrategy}`)
+  }
+
+  const copyDebug = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(debug, null, 2))
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+  }
+
+  return (
+    <details className="my-2 rounded border border-[var(--color-border)] px-2 py-1">
+      <summary className="cursor-pointer text-[0.7rem] font-medium text-[var(--color-text-secondary)]">
+        {text('本次请求上下文', '本次请求上下文')}
+      </summary>
+      <div className="mt-1 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[0.68rem] leading-relaxed text-[var(--color-text-muted)]">
+            {metaParts.join(' · ')}
+          </p>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-[0.68rem]"
+            style={{
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-hover)',
+              border: '1px solid var(--color-border)',
+            }}
+            onClick={() => void copyDebug()}
+          >
+            {copyState === 'copied' ? text('已复制', '已复制') : text('复制', '复制')}
+          </button>
+          {copyState === 'failed' && (
+            <span role="alert" className="text-[0.68rem] text-[var(--color-text-muted)]">
+              {text('复制失败', '复制失败')}
+            </span>
+          )}
+        </div>
+        {debug.messages.map((msg, index) => (
+          <div key={`${msg.role}-${index}`} className="space-y-0.5">
+            <p className="text-[0.68rem] font-medium text-[var(--color-text-secondary)]">
+              [{msg.role}] · {msg.content.length} {text('字', '字')}
+            </p>
+            <pre
+              className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded px-2 py-1 text-[0.68rem] leading-relaxed"
+              style={{
+                background: 'var(--color-hover)',
+                color: 'var(--color-text-muted)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              {msg.content}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export default function AgentMessage({ message }: Props) {
-  const { role, content, streaming, toolCalls, artifacts } = message
+  const { role, content, streaming, toolCalls, artifacts, requestDebug } = message
   const text = useLocaleStore(state => state.text)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyMessage = async () => {
@@ -106,6 +178,8 @@ export default function AgentMessage({ message }: Props) {
             ))}
           </div>
         )}
+
+        {requestDebug ? <RequestDebugPanel debug={requestDebug} /> : null}
       </div>
       {copyButton}
     </div>

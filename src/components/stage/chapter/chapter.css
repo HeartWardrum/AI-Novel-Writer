@@ -66,6 +66,25 @@
   overflow-wrap: anywhere;
 }
 
+.stage-ch-title-input {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  outline: none;
+}
+
+.stage-ch-title-input:focus {
+  border-bottom-color: var(--rule-strong);
+}
+
+.stage-ch-title-input::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}
+
 .stage-ch-version {
   flex: none;
   color: var(--ink-2);
@@ -80,6 +99,13 @@
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
   font-size: var(--fs-12);
+}
+
+.stage-ch-head-meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--s-2);
 }
 
 .stage-ch-head .pi-life {

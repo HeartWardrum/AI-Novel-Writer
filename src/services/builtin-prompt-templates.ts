@@ -28,6 +28,7 @@ export interface PromptTemplate {
 
 /** 允许用户自定义编辑的模板 Key 列表（其余为系统模板，不可编辑） */
 export const EDITABLE_PROMPT_KEYS: string[] = [
+  'direct_chat_system',
   'assistant_writing_identity',
   'generate_novel_config_field',
   'edit_selected_text',
@@ -189,6 +190,15 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
     ...getPlanningMaterialExtractionTemplate('zh-CN'),
     variables: { requested_ids: '必须覆盖的资料块标识', sources: '作者提供的原始资料块' },
     requiredContextVariables: ['requested_ids', 'sources'],
+  },
+
+  {
+    key: 'direct_chat_system',
+    name: '直连对话系统提示',
+    description: '右栏对话发给模型的系统身份与指导（不含工具协议）',
+    systemRole: '你是写作助手，用对话帮用户构思、讨论与润色。若要把内容写进作品正文，请提醒用户使用界面上的「写本章」。不要调用工具，不要输出 tool_call、invoke 或类似协议标签。',
+    variables: {},
+    content: '',
   },
 
   {
@@ -1487,6 +1497,14 @@ severity 取值：error=严重的上述客观问题，强烈建议修复；warni
   },
 ]
 
+const EN_US_DIRECT_CHAT_SYSTEM: Pick<PromptTemplate, 'name' | 'description' | 'systemRole' | 'content' | 'variables'> = {
+  name: 'Direct chat system prompt',
+  description: 'System identity for the workbench chat rail (no tool protocol)',
+  systemRole: 'You are a writing assistant. Help the user brainstorm and discuss in chat. To put text into the manuscript, ask them to use Write chapter in the UI. Do not call tools or emit tool_call / invoke protocol tags.',
+  variables: {},
+  content: '',
+}
+
 const EN_US_ASSISTANT_IDENTITY: Pick<PromptTemplate, 'name' | 'description' | 'systemRole' | 'taskGuidance' | 'content' | 'systemSuffix' | 'variables'> = {
   name: 'AI writing assistant identity',
   description: 'Define the creative role and working guidance for the writing assistant',
@@ -1513,6 +1531,7 @@ export function getBuiltinPromptTemplate(
   if (!builtin) return undefined
   if (resolveWritingLanguage(writingLanguage) !== 'en-US') return builtin
   if (key === 'planning_material_character_extraction') return { ...builtin, ...getPlanningMaterialExtractionTemplate('en-US'), name: 'Planning material character extraction', description: 'Extract character candidates from explicit author material' }
+  if (key === 'direct_chat_system') return { ...builtin, ...EN_US_DIRECT_CHAT_SYSTEM }
   if (key === 'assistant_writing_identity') return { ...builtin, ...EN_US_ASSISTANT_IDENTITY }
   const translated: PromptLanguageTemplate | undefined = EN_US_BUILTIN_PROMPTS[
     key as keyof typeof EN_US_BUILTIN_PROMPTS

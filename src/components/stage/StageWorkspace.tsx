@@ -12,7 +12,6 @@ import ArchFileViewer from '../editor/ArchFileViewer'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { DangerConfirm } from '../ui/DangerConfirm'
-import RunSheet from './run/RunSheet'
 import StageArchitecture from './architecture/StageArchitecture'
 import StageCharacters from './characters/StageCharacters'
 import StageLibrary from './library/StageLibrary'
@@ -69,7 +68,6 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
   const project = useProjectStore(s => s.currentProject)
   const tabs = useEditorStore(s => s.tabs)
   const activeTabId = useEditorStore(s => s.activeTabId)
-  const sheet = useStageStore(s => s.sheet)
   const tabDomId = (tabId: string) => `${STAGE_CONTENT_ID}-tab-${tabId.replace(/[^\w-]/g, '_')}`
   const closingTabId = useStageStore(s => s.closingTabId)
   const pending = tabs.find(tab => tab.id === closingTabId) ?? null
@@ -94,7 +92,7 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
     )
   }
 
-  // 设置页盖在内容区上，标签内容保持挂载（编辑器的撤销历史、滚动位置不丢），运行侧页照常在右侧。
+  // 设置页盖在内容区上，标签内容保持挂载（编辑器的撤销历史、滚动位置不丢）。运行与对话在外壳右栏。
   const showTabs = !focus && !settingsOpen && tabs.length > 1
   return (
     <main className="stage-panel">
@@ -129,19 +127,12 @@ export default function StageWorkspace({ library, focus }: { library: boolean; f
             )
             : (
               <EmptyState
-                heading={text('从流程脊选一步开始', 'Pick a step in the flow to begin')}
-                description={text('左侧按设定、架构、蓝图、正文排列，点任意一步打开它。', 'Setup, architecture, blueprint and manuscript are listed on the left. Open any of them.')}
-                action={<Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'setup' })}>{text('打开设定', 'Open setup')}</Button>}
+                heading={text('从左侧打开一章开始写', 'Open a chapter on the left to begin')}
+                description={text('中间是正文，右侧可以和 AI 对话写章。', 'The center is the manuscript; chat with the AI on the right to draft chapters.')}
+                action={<Button variant="primary" onClick={() => navigate({ kind: 'stage', stage: 'manuscript' })}>{text('打开正文', 'Open manuscript')}</Button>}
               />
             )}
         </div>
-        {sheet?.kind === 'run' && !focus && (
-          <div className="stage-sheet-slot" data-wide={sheet.tab === 'diagnostics' || undefined}>
-            <ErrorBoundary fallbackLabel={text('运行侧页渲染失败', 'Run sheet failed to render')}>
-              <RunSheet sheet={sheet} />
-            </ErrorBoundary>
-          </div>
-        )}
       </div>
       <DangerConfirm
         open={pending !== null}

@@ -7,7 +7,7 @@ import { useDraftStore } from '../../stores/draft-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { useLocaleStore } from '../../stores/locale-store'
 import {
-  deriveChapters, deriveStages, landingStage, locate, missingSetup, runningChapters,
+  deriveChapters, deriveStages, landingStage, locate, runningChapters,
   type ChapterRow, type StageLocation, type StageStatus,
 } from '../../stores/navigation/stage-progress'
 import { refreshChapterFacts } from '../../stores/navigation/chapter-facts'
@@ -43,7 +43,13 @@ export async function refreshStageWork(text: (zh: string, en: string) => string)
     ])
     if (!current()) return
     const chapters = blueprints.map(({ chapterNumber, title }) => ({ chapterNumber, title }))
-    const working = deriveChapters({ blueprints: chapters, drafts: useDraftStore.getState().draftsByChapter, runningChapters: new Set() })
+    const totalChapters = useProjectStore.getState().currentProject?.novelConfig.totalChapters
+    const working = deriveChapters({
+      blueprints: chapters,
+      drafts: useDraftStore.getState().draftsByChapter,
+      runningChapters: new Set(),
+      totalChapters,
+    })
       .flatMap(row => row.draft && row.draft.status !== 'finalized' ? [row.draft] : [])
     // 落点只看章是否待写或定稿，不需要 facts，所以先出 work；流程脊等 spineFacts。主进程按到达顺序处理读取：
     // 等一个任务，让落点先把那一章的正文读取发出去，facts 排在它后面。
@@ -151,9 +157,16 @@ export function useStageView(): StageView {
   const chapterFacts = session && factsState && sameProjectSessionContext(factsState.session, session) ? factsState.byDraft : undefined
   const runningChapterSet = useMemo(() => new Set(running ? running.split(',').map(Number) : []), [running])
 
+  const totalChapters = project?.novelConfig.totalChapters
   const chapters = useMemo(() => currentWork && drafts
-    ? deriveChapters({ blueprints: currentWork.blueprints, drafts, runningChapters: runningChapterSet, chapterFacts })
-    : [], [currentWork, drafts, runningChapterSet, chapterFacts])
+    ? deriveChapters({
+      blueprints: currentWork.blueprints,
+      drafts,
+      runningChapters: runningChapterSet,
+      chapterFacts,
+      totalChapters,
+    })
+    : [], [currentWork, drafts, runningChapterSet, chapterFacts, totalChapters])
   const stages = useMemo(() => project && currentWork && drafts
     ? deriveStages({ config: project.novelConfig, architecture: currentWork.architecture, blueprints: currentWork.blueprints, drafts, runningChapters: runningChapterSet }, chapters)
     : [], [project, currentWork, drafts, runningChapterSet, chapters])
@@ -169,8 +182,8 @@ export function useStageView(): StageView {
 }
 
 /**
- * 打开作品时把内容区放到下一步：设定没填完就停在设定，否则等架构、蓝图与草稿载入后落到第一个未完成的阶段。
- * 每次打开（项目会话）只落一次；这次打开已有标签时保持原样。
+ * 打开作品时落到正文（当前该写的章）；不等设定填完。每次打开（项目会话）只落一次；这次打开已有标签时保持原样。
+ * 仍等架构/蓝图/草稿载入完成（view.landing 非空）再落，但目标固定为 manuscript。
  */
 export function useLandingPage(view: StageView): void {
   const project = useProjectStore(s => s.currentProject)
@@ -184,13 +197,8 @@ export function useLandingPage(view: StageView): void {
       landed.current = key
       return
     }
-    if (missingSetup(project.novelConfig).length > 0) {
-      landed.current = key
-      navigate({ kind: 'stage', stage: 'setup' })
-      return
-    }
     if (!view.landing) return
     landed.current = key
-    navigate({ kind: 'stage', stage: view.landing })
+    navigate({ kind: 'stage', stage: 'manuscript' })
   }, [project, view.landing])
 }
