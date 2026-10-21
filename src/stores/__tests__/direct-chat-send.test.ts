@@ -400,6 +400,91 @@ describe('direct chat sendMessage', () => {
     expect(payload.messages.map(m => m.content)).toEqual(['说说灯塔', '雾钟响了'])
     expect(payload.messages.every(m => !('requestDebug' in m) || m.requestDebug === undefined)).toBe(true)
   })
+
+  it('deletes an assistant message without removing the user prompt', () => {
+    const now = Date.now()
+    useAgentStore.setState({
+      conversations: [{
+        id: 'c1',
+        title: '测',
+        modelId: null,
+        createdAt: now,
+        updatedAt: now,
+        messages: [
+          { id: 'u1', role: 'user', content: '写开头', createdAt: now },
+          { id: 'a1', role: 'assistant', content: '不满意的开头', createdAt: now + 1 },
+        ],
+      }],
+      activeConversationId: 'c1',
+      generating: false,
+      activeRequestId: null,
+    })
+    useAgentStore.getState().deleteMessage('a1')
+    expect(useAgentStore.getState().getActiveConversation()?.messages.map(m => m.id)).toEqual(['u1'])
+  })
+
+  it('updates message content locally without regenerating', () => {
+    const now = Date.now()
+    useAgentStore.setState({
+      conversations: [{
+        id: 'c1',
+        title: '测',
+        modelId: null,
+        createdAt: now,
+        updatedAt: now,
+        messages: [
+          { id: 'u1', role: 'user', content: '旧提示', createdAt: now },
+          { id: 'a1', role: 'assistant', content: '旧回复', createdAt: now + 1, requestDebug: {
+            at: now, modelId: 'model-a', messages: [], meta: { purpose: 'generation', reasoningStage: 'drafting', historyCount: 0 },
+          } },
+        ],
+      }],
+      activeConversationId: 'c1',
+      generating: false,
+      activeRequestId: null,
+    })
+    useAgentStore.getState().updateMessageContent('u1', '新提示')
+    useAgentStore.getState().updateMessageContent('a1', '手改回复')
+    const messages = useAgentStore.getState().getActiveConversation()?.messages ?? []
+    expect(messages.map(m => m.content)).toEqual(['新提示', '手改回复'])
+    expect(messages[1]?.requestDebug).toBeUndefined()
+  })
+
+  it('resends an edited user message and drops later turns', async () => {
+    const now = Date.now()
+    useAgentStore.setState({
+      conversations: [{
+        id: 'c1',
+        title: '测',
+        modelId: null,
+        createdAt: now,
+        updatedAt: now,
+        messages: [
+          { id: 'u1', role: 'user', content: '第一问', createdAt: now },
+          { id: 'a1', role: 'assistant', content: '第一答', createdAt: now + 1 },
+          { id: 'u2', role: 'user', content: '第二问', createdAt: now + 2 },
+          { id: 'a2', role: 'assistant', content: '第二答', createdAt: now + 3 },
+        ],
+      }],
+      activeConversationId: 'c1',
+      generating: false,
+      activeRequestId: null,
+    })
+    const generateStream = vi.fn(async (messages, callbacks) => {
+      expect(messages.at(-1)).toMatchObject({ role: 'user', content: '改过的第二问' })
+      expect(messages.some((m: { content: string }) => m.content === '第二答')).toBe(false)
+      callbacks.onDone?.('新的第二答')
+      return 'stream-resend'
+    })
+    useLLMStore.setState({ generateStream })
+
+    await useAgentStore.getState().resendUserMessage('u2', '改过的第二问')
+
+    const messages = useAgentStore.getState().getActiveConversation()?.messages ?? []
+    expect(messages.map(m => m.content)).toEqual(['第一问', '第一答', '改过的第二问', '新的第二答'])
+    expect(messages.some(m => m.id === 'a2')).toBe(false)
+    expect(generateStream).toHaveBeenCalledOnce()
+  })
 })
 
 describe('agent chat hydrateFromProject', () => {

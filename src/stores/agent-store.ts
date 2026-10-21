@@ -124,8 +124,18 @@ interface AgentState {
   setShowHistory: (show: boolean) => void
   /** 设置当前会话使用的模型 */
   setModelId: (modelId: string | null) => void
-  /** 发送消息（工作台直连流式对话） */
-  sendMessage: (content: string, recoveryHandle?: MainGenerationRunHandle) => Promise<void>
+  /** 删除单条消息（不连带其它消息） */
+  deleteMessage: (messageId: string) => void
+  /** 仅更新消息正文（不触发重新生成） */
+  updateMessageContent: (messageId: string, content: string) => void
+  /** 编辑用户消息并从此处重发：丢弃该条之后的消息，再生成新回复 */
+  resendUserMessage: (messageId: string, content: string) => Promise<void>
+  /** 发送消息（工作台直连流式对话）；editUserMessageId 时从此用户消息截断并重发 */
+  sendMessage: (
+    content: string,
+    recoveryHandle?: MainGenerationRunHandle,
+    options?: { editUserMessageId?: string },
+  ) => Promise<void>
   /** Explicitly recover the original Agent turn, including its durable tool calls. */
   resumeGeneration: (handle: MainGenerationRunHandle) => Promise<void>
   /** 取消当前生成 */
@@ -378,19 +388,65 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     void persistConversationById(conv.id)
   },
 
-  sendMessage: async (content, recoveryHandle) => {
+  deleteMessage: (messageId) => {
+    const conv = get().getActiveConversation()
+    if (!conv || get().generating) return
+    const nextMessages = conv.messages.filter(message => message.id !== messageId)
+    if (nextMessages.length === conv.messages.length) return
+    set(state => ({
+      conversations: state.conversations.map(c =>
+        c.id === conv.id
+          ? { ...c, messages: nextMessages, updatedAt: Date.now() }
+          : c
+      ),
+    }))
+    void persistConversationById(conv.id)
+  },
+
+  updateMessageContent: (messageId, content) => {
+    const conv = get().getActiveConversation()
+    if (!conv || get().generating) return
+    const next = content.trim()
+    if (!next) return
+    const target = conv.messages.find(message => message.id === messageId)
+    if (!target || target.streaming) return
+    set(state => ({
+      conversations: state.conversations.map(c =>
+        c.id === conv.id
+          ? {
+              ...c,
+              title: c.messages[0]?.id === messageId ? generateTitle(next) : c.title,
+              messages: c.messages.map(message =>
+                message.id === messageId
+                  ? { ...message, content: next, requestDebug: undefined }
+                  : message
+              ),
+              updatedAt: Date.now(),
+            }
+          : c
+      ),
+    }))
+    void persistConversationById(conv.id)
+  },
+
+  resendUserMessage: async (messageId, content) => {
+    await get().sendMessage(content, undefined, { editUserMessageId: messageId })
+  },
+
+  sendMessage: async (content, recoveryHandle, options) => {
     // 直连对话不再恢复 Agent Generation 托管轮次
     if (recoveryHandle) return
     if (!content.trim() || get().generating) return
 
+    const editUserMessageId = options?.editUserMessageId
     let requestLocale = useLocaleStore.getState().locale
     const text = (zhCNText: string, enUSText: string) => requestLocale === 'en-US' ? enUSText : zhCNText
     let skillInvocation: { skill: LoadedSkill; input: string } | null = null
     let messageContent = content
 
-    // ===== / 命令拦截 =====
+    // ===== / 命令拦截（重发编辑中的用户消息时不当命令处理） =====
     const trimmedContent = content.trim()
-    if (trimmedContent.startsWith('/')) {
+    if (!editUserMessageId && trimmedContent.startsWith('/')) {
       // Skill 命令可能需要已加载的 Skill 列表
       if (!get().toolsInitialized) get().initializeTools()
       const { command, args } = parseSlashCommand(trimmedContent, requestLocale)
@@ -437,6 +493,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
     let conv = get().getActiveConversation()
     if (!conv) {
+      if (editUserMessageId) return
       conv = get().createConversation()
     }
     const convId = conv.id
@@ -462,13 +519,6 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       messageContent = `${modelText('[用户使用了 Skill:', '[The user invoked Skill:')} ${displayName}]\n\n${modelText('用户输入:', 'User input:')} ${skillInvocation.input || modelText('(无额外参数)', '(no additional arguments)')}\n\n---\n\n${skillContent}`
     }
 
-    const userMsg: AgentMessage = {
-      id: genId(),
-      role: 'user',
-      content: messageContent.trim(),
-      createdAt: Date.now(),
-    }
-
     const assistantMsg: AgentMessage = {
       id: genId(),
       role: 'assistant',
@@ -477,8 +527,31 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       streaming: true,
     }
 
-    const isFirstMsg = conv.messages.length === 0
-    const newTitle = isFirstMsg ? generateTitle(content) : conv.title
+    let userMsg: AgentMessage
+    let nextMessages: AgentMessage[]
+    let newTitle = conv.title
+
+    if (editUserMessageId) {
+      const editIndex = conv.messages.findIndex(message => message.id === editUserMessageId)
+      const existing = editIndex >= 0 ? conv.messages[editIndex] : undefined
+      if (!existing || existing.role !== 'user' || existing.streaming) return
+      userMsg = {
+        ...existing,
+        content: messageContent.trim(),
+      }
+      nextMessages = [...conv.messages.slice(0, editIndex), userMsg, assistantMsg]
+      if (editIndex === 0) newTitle = generateTitle(content)
+    } else {
+      userMsg = {
+        id: genId(),
+        role: 'user',
+        content: messageContent.trim(),
+        createdAt: Date.now(),
+      }
+      const isFirstMsg = conv.messages.length === 0
+      newTitle = isFirstMsg ? generateTitle(content) : conv.title
+      nextMessages = [...conv.messages, userMsg, assistantMsg]
+    }
 
     set(state => ({
       generating: true,
@@ -487,7 +560,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           ? {
               ...c,
               title: newTitle,
-              messages: [...c.messages, userMsg, assistantMsg],
+              messages: nextMessages,
               updatedAt: Date.now(),
             }
           : c

@@ -6,9 +6,13 @@
  * - 助手消息：左侧 Markdown 风格渲染
  * - Tool 调用：ToolCallBlock / ConfirmCard / ArtifactCard
  */
-import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
-import type { AgentMessage as AgentMessageType, AgentRequestDebug } from '../../../stores/agent-store'
+import { useState, type ReactNode } from 'react'
+import { Check, Copy, Pencil, Trash2, RotateCw } from 'lucide-react'
+import {
+  useAgentStore,
+  type AgentMessage as AgentMessageType,
+  type AgentRequestDebug,
+} from '../../../stores/agent-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import MarkdownContent, { StreamingCursor } from '../../ui/MarkdownContent'
 import ToolCallBlock from './ToolCallBlock'
@@ -92,10 +96,45 @@ function RequestDebugPanel({ debug }: { debug: AgentRequestDebug }) {
   )
 }
 
+function MessageActionButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-6 w-6 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+      style={{ color: 'var(--color-text-muted)', background: 'var(--color-hover)' }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function AgentMessage({ message }: Props) {
-  const { role, content, streaming, toolCalls, artifacts, requestDebug } = message
+  const { id, role, content, streaming, toolCalls, artifacts, requestDebug } = message
   const text = useLocaleStore(state => state.text)
+  const generating = useAgentStore(state => state.generating)
+  const deleteMessage = useAgentStore(state => state.deleteMessage)
+  const updateMessageContent = useAgentStore(state => state.updateMessageContent)
+  const resendUserMessage = useAgentStore(state => state.resendUserMessage)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(content)
+  const busy = generating || Boolean(streaming)
+  const canMutate = !busy && !editing
+
   const copyMessage = async () => {
     try {
       await navigator.clipboard.writeText(content)
@@ -104,23 +143,122 @@ export default function AgentMessage({ message }: Props) {
       setCopyState('failed')
     }
   }
-  const copyButton = (
-    <>
-      <button
-        type="button"
-        aria-label={text('复制消息', 'Copy message')}
-        title={copyState === 'copied'
-          ? text('已复制', 'Copied')
-          : text('复制消息', 'Copy message')}
+
+  const startEdit = () => {
+    setDraft(content)
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setDraft(content)
+    setEditing(false)
+  }
+
+  const saveEdit = () => {
+    const next = draft.trim()
+    if (!next || next === content) {
+      setEditing(false)
+      return
+    }
+    updateMessageContent(id, next)
+    setEditing(false)
+  }
+
+  const saveAndResend = () => {
+    const next = draft.trim()
+    if (!next) return
+    setEditing(false)
+    void resendUserMessage(id, next)
+  }
+
+  const actionBar = (
+    <div className={`absolute top-1 flex gap-0.5 ${role === 'user' ? 'left-1' : 'right-1'}`}>
+      <MessageActionButton
+        label={copyState === 'copied' ? text('已复制', 'Copied') : text('复制消息', 'Copy message')}
         disabled={!content || streaming}
         onClick={() => void copyMessage()}
-        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
-        style={{ color: 'var(--color-text-muted)', background: 'var(--color-hover)' }}
       >
         {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
-      </button>
-      {copyState === 'failed' && <span role="alert" className="sr-only">{text('无法复制这条消息', 'Could not copy this message')}</span>}
-    </>
+      </MessageActionButton>
+      <MessageActionButton
+        label={text('编辑', 'Edit')}
+        disabled={!canMutate || !content}
+        onClick={startEdit}
+      >
+        <Pencil size={13} />
+      </MessageActionButton>
+      {role === 'user' && (
+        <MessageActionButton
+          label={text('重新发送', 'Resend')}
+          disabled={!canMutate || !content.trim()}
+          onClick={() => void resendUserMessage(id, content)}
+        >
+          <RotateCw size={13} />
+        </MessageActionButton>
+      )}
+      <MessageActionButton
+        label={text('删除', 'Delete')}
+        disabled={!canMutate}
+        onClick={() => deleteMessage(id)}
+      >
+        <Trash2 size={13} />
+      </MessageActionButton>
+      {copyState === 'failed' && (
+        <span role="alert" className="sr-only">{text('无法复制这条消息', 'Could not copy this message')}</span>
+      )}
+    </div>
+  )
+
+  const editor = (
+    <div className="w-full space-y-2">
+      <textarea
+        value={draft}
+        onChange={event => setDraft(event.target.value)}
+        rows={Math.min(12, Math.max(3, draft.split('\n').length + 1))}
+        className="w-full rounded-lg px-3 py-2 text-xs leading-relaxed"
+        style={{
+          background: 'var(--color-surface)',
+          color: 'var(--color-text)',
+          border: '1px solid var(--color-border)',
+          resize: 'vertical',
+        }}
+        aria-label={text('编辑消息', 'Edit message')}
+      />
+      <div className="flex flex-wrap justify-end gap-1.5">
+        <button
+          type="button"
+          className="rounded-md px-2.5 py-1 text-[0.7rem]"
+          style={{ color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
+          onClick={cancelEdit}
+        >
+          {text('取消', 'Cancel')}
+        </button>
+        <button
+          type="button"
+          className="rounded-md px-2.5 py-1 text-[0.7rem]"
+          style={{ color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+          disabled={!draft.trim()}
+          onClick={saveEdit}
+        >
+          {text('仅保存', 'Save')}
+        </button>
+        {role === 'user' && (
+          <button
+            type="button"
+            className="rounded-md px-2.5 py-1 text-[0.7rem] font-medium"
+            style={{
+              color: 'var(--color-accent-contrast, #fff)',
+              background: 'var(--color-accent)',
+              border: '1px solid transparent',
+            }}
+            disabled={!draft.trim() || busy}
+            onClick={saveAndResend}
+          >
+            {text('保存并重发', 'Save & resend')}
+          </button>
+        )}
+      </div>
+    </div>
   )
 
   if (role === 'user') {
@@ -134,9 +272,9 @@ export default function AgentMessage({ message }: Props) {
             color: 'var(--color-text)',
           }}
         >
-          {content}
+          {editing ? editor : content}
         </div>
-        {copyButton}
+        {!editing && actionBar}
       </div>
     )
   }
@@ -148,40 +286,41 @@ export default function AgentMessage({ message }: Props) {
         className="max-w-full text-xs leading-relaxed break-words w-full"
         style={{ color: 'var(--color-text)' }}
       >
-        {/* 文本内容 */}
-        {content ? (
-          <MarkdownContent content={content} streaming={streaming} />
-        ) : streaming ? (
-          <span className="inline-flex items-center h-4">
-            <StreamingCursor />
-          </span>
-        ) : null}
+        {editing ? editor : (
+          <>
+            {content ? (
+              <MarkdownContent content={content} streaming={streaming} />
+            ) : streaming ? (
+              <span className="inline-flex items-center h-4">
+                <StreamingCursor />
+              </span>
+            ) : null}
 
-        {/* Tool 调用区块列表 */}
-        {toolCalls && toolCalls.length > 0 && (
-          <div className="mt-2">
-            {toolCalls.map(tc => (
-              tc.status === 'waiting_confirm' ? (
-                <ConfirmCard key={tc.id} toolCall={tc} />
-              ) : (
-                <ToolCallBlock key={tc.id} toolCall={tc} />
-              )
-            ))}
-          </div>
+            {toolCalls && toolCalls.length > 0 && (
+              <div className="mt-2">
+                {toolCalls.map(tc => (
+                  tc.status === 'waiting_confirm' ? (
+                    <ConfirmCard key={tc.id} toolCall={tc} />
+                  ) : (
+                    <ToolCallBlock key={tc.id} toolCall={tc} />
+                  )
+                ))}
+              </div>
+            )}
+
+            {artifacts && artifacts.length > 0 && (
+              <div className="mt-2">
+                {artifacts.map((a, i) => (
+                  <ArtifactCard key={`artifact-${i}`} artifact={a} />
+                ))}
+              </div>
+            )}
+
+            {requestDebug ? <RequestDebugPanel debug={requestDebug} /> : null}
+          </>
         )}
-
-        {/* 产物卡片列表 */}
-        {artifacts && artifacts.length > 0 && (
-          <div className="mt-2">
-            {artifacts.map((a, i) => (
-              <ArtifactCard key={`artifact-${i}`} artifact={a} />
-            ))}
-          </div>
-        )}
-
-        {requestDebug ? <RequestDebugPanel debug={requestDebug} /> : null}
       </div>
-      {copyButton}
+      {!editing && actionBar}
     </div>
   )
 }
