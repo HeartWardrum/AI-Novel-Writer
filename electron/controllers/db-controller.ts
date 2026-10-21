@@ -65,6 +65,8 @@ import { NarrativeThreadRepository } from '../repositories/narrative-thread-repo
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
 import { RecoveryCandidateRepository } from '../repositories/recovery-candidate-repository'
 import { WorldbookRepository } from '../repositories/worldbook-repository'
+import { AgentChatRepository } from '../repositories/agent-chat-repository'
+import type { PersistedAgentConversation } from '../../src/shared/agent-chat'
 import type { RecoveryCandidateRecordInput } from '../../src/shared/recovery-candidate'
 import type {
   WorldbookActivation,
@@ -133,6 +135,10 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'worldbook:save-activation',
   'worldbook:import-sources',
   'worldbook:delete',
+  'agent-chat:upsert',
+  'agent-chat:delete',
+  'agent-chat:set-active',
+  'agent-chat:clear',
 ])
 
 function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
@@ -172,7 +178,11 @@ export function registerDatabaseController() {
 
   ipcMain.handle('worldbook:list', async (
     _event,
-    options: { includeReferenceContent?: boolean; currentChapter?: number } | undefined,
+    options: {
+      includeReferenceContent?: boolean
+      currentChapter?: number
+      systemPromptSeed?: string
+    } | undefined,
     expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
@@ -246,6 +256,54 @@ export function registerDatabaseController() {
   ipcMain.handle('worldbook:resolve', async (_event, request: WorldbookResolveRequest, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return WorldbookRepository.resolve(request, expectedProjectPath)
+  })
+
+  ipcMain.handle('agent-chat:load', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return AgentChatRepository.load()
+  })
+
+  ipcMain.handle('agent-chat:upsert', async (_event, conversation: PersistedAgentConversation, expectedProjectPath: string) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      return { success: true, conversation: AgentChatRepository.upsert(conversation) }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('agent-chat:delete', async (_event, conversationId: string, expectedProjectPath: string) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      AgentChatRepository.delete(conversationId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('agent-chat:set-active', async (
+    _event,
+    activeConversationId: string | null,
+    expectedProjectPath: string,
+  ) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      AgentChatRepository.setActive(activeConversationId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('agent-chat:clear', async (_event, expectedProjectPath: string) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      AgentChatRepository.clearAll()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
   })
 
   ipcMain.handle('db:project-core-update', async (

@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openCanonicalProjectFixture } from '../../../test/helpers/canonical-project-fixture'
 import { closeProjectDatabase, getProjectDb } from '../../database'
 import { WorldbookRepository } from '../worldbook-repository'
-import { defaultWorldbookActivation } from '../../../src/shared/worldbook'
+import {
+  WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID,
+  defaultWorldbookActivation,
+} from '../../../src/shared/worldbook'
 
 let projectPath = ''
 
@@ -44,10 +47,47 @@ afterEach(() => {
 })
 
 describe('worldbook repository', () => {
-  it('lists only editable authored entries, not live domain projections', async () => {
+  it('lists the pinned system prompt and not live domain projections', async () => {
     const entries = await WorldbookRepository.list(projectPath, { currentChapter: 2 })
-    expect(entries).toEqual([])
-    expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM worldbook_entries').pluck().get()).toBe(0)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      id: WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID,
+      title: '系统提示',
+      source: { kind: 'system' },
+      deletable: false,
+      activation: { alwaysOn: true, enabled: true },
+    })
+    expect(entries[0]!.content).toContain('写作助手')
+    expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM worldbook_entries').pluck().get()).toBe(1)
+  })
+
+  it('refuses to delete the system prompt and keeps alwaysOn locked', async () => {
+    const [system] = await WorldbookRepository.list(projectPath)
+    expect(system?.id).toBe(WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID)
+    expect(() => WorldbookRepository.delete(WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID, system!.revision))
+      .toThrow('WORLDBOOK_ENTRY_PROTECTED')
+    const saved = WorldbookRepository.save({
+      id: system!.id,
+      expectedRevision: system!.revision,
+      kind: 'rule',
+      title: '系统提示',
+      content: '自定义系统身份。',
+      activation: { ...system!.activation, alwaysOn: false, enabled: false },
+    })
+    expect(saved.content).toBe('自定义系统身份。')
+    expect(saved.activation.alwaysOn).toBe(true)
+    expect(saved.activation.enabled).toBe(true)
+    expect(saved.deletable).toBe(false)
+  })
+
+  it('excludes the system prompt from resolve selections', async () => {
+    await WorldbookRepository.list(projectPath)
+    const resolved = await WorldbookRepository.resolve({
+      stage: 'drafting',
+      draftText: '随便聊聊',
+      budgetTokens: 4_000,
+    }, projectPath)
+    expect(resolved.selections.every(item => item.entryId !== WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID)).toBe(true)
   })
 
   it('exposes work materials as import candidates and copies them into editable entries', async () => {
@@ -73,15 +113,16 @@ describe('worldbook repository', () => {
     expect(imported.every(entry => entry.editable && entry.source.kind === 'import')).toBe(true)
 
     const listed = await WorldbookRepository.list(projectPath)
-    expect(listed).toHaveLength(2)
+    expect(listed).toHaveLength(3)
+    expect(listed[0]?.id).toBe(WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID)
     expect(listed.find(entry => entry.title === '世界观设定')?.content).toBe('世界观原文')
-    expect(listed.find(entry => entry.id.startsWith('wb:'))).toBeTruthy()
+    expect(listed.filter(entry => entry.id.startsWith('wb:') && entry.source.kind === 'import')).toHaveLength(2)
 
     const again = await WorldbookRepository.listSources(projectPath, { currentChapter: 2 })
     expect(again.find(item => item.id === 'project:world-setting')?.alreadyImported).toBe(true)
     const secondPass = await WorldbookRepository.importSources(projectPath, ['project:world-setting'])
     expect(secondPass).toEqual([])
-    expect(await WorldbookRepository.list(projectPath)).toHaveLength(2)
+    expect(await WorldbookRepository.list(projectPath)).toHaveLength(3)
   })
 
   it('lets authors edit imported entries without writing back to the source projection', async () => {

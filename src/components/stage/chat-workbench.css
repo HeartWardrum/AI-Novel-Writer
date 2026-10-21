@@ -1,0 +1,168 @@
+/* 聊天优先外壳：全幅对话，无正文栏。只引用纸墨令牌。 */
+
+.chat-shell-frame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 10px 10px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.stage-shell[data-library] .chat-shell-frame {
+  display: none;
+}
+
+.chat-topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 70%, var(--paper));
+}
+
+.chat-topbar-title {
+  min-width: 0;
+  margin: 0;
+  font: 600 var(--fs-14)/1.3 var(--font-ui);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-topbar-gap {
+  flex: 1;
+  min-width: var(--s-2);
+}
+
+.chat-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  flex: none;
+}
+
+.chat-workbench {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--paper);
+}
+
+.chat-workbench-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.chat-workbench-tab {
+  border: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: 600 var(--fs-12)/1.2 var(--font-ui);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.chat-workbench-tab[aria-selected='true'] {
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 1px 0 var(--paper), inset 0 -1px 0 var(--rule);
+}
+
+.chat-workbench-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-workbench-chat,
+.chat-workbench-run {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 居中阅读栏：空态与有消息共用同一窄列，不全宽铺开。 */
+.chat-workbench-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-inline: var(--s-4);
+}
+
+.chat-workbench-chat > * {
+  width: min(42rem, 100%);
+}
+
+.chat-workbench-chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-workbench-chat-panel .writer-ai-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+
+.chat-overlay-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.chat-overlay-head h2 {
+  margin: 0;
+  font: 600 var(--fs-16)/1.3 var(--font-display);
+  color: var(--ink);
+}
+
+.chat-overlay-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-overlay-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-settings-layer {
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--z-popover) + 1);
+  background: var(--surface);
+  overflow: auto;
+}

@@ -225,6 +225,9 @@ export function initProjectService(): void {
 export function onProjectOpening(projectSession: ProjectSessionContext): void {
   useCharacterStore.getState().beginProjectLoad(projectSession.projectPath)
   useDraftStore.getState().beginProjectLoad(projectSession.projectPath)
+  void import('../stores/agent-store').then(({ useAgentStore }) => {
+    useAgentStore.getState().clearAll({ persist: false })
+  })
 }
 
 /**
@@ -237,10 +240,12 @@ export async function onProjectOpened(
   const text = useLocaleStore.getState().text
   if (!isProjectSessionCurrent(projectSession)) return { warnings: [] }
 
-  // 并行加载角色卡和草稿列表
+  // 并行加载角色卡、草稿列表与对话历史
+  const { useAgentStore } = await import('../stores/agent-store')
   const results = await Promise.allSettled([
     useCharacterStore.getState().load(projectSession.projectPath, projectSession),
     useDraftStore.getState().loadAllDrafts(projectSession.projectPath, projectSession),
+    useAgentStore.getState().hydrateFromProject(projectSession),
   ])
   if (!isProjectSessionCurrent(projectSession)) return { warnings: [] }
   const warnings: string[] = []
@@ -259,6 +264,12 @@ export async function onProjectOpened(
     warnings.push(text(
       `草稿列表读取失败：${String(results[1].reason)}`,
       'Could not load the draft list.',
+    ))
+  }
+  if (results[2].status === 'rejected') {
+    warnings.push(text(
+      `对话记录读取失败：${String(results[2].reason)}`,
+      'Could not load chat history.',
     ))
   }
 
@@ -298,6 +309,9 @@ export async function onProjectClosed(projectPath: string | null): Promise<void>
 export function disableProjectBindingsPreservingDrafts(projectPath: string | null): void {
   useCharacterStore.getState().reset()
   useDraftStore.getState().reset()
+  void import('../stores/agent-store').then(({ useAgentStore }) => {
+    useAgentStore.getState().clearAll({ persist: false })
+  })
 
   console.log('[ProjectService] 已停用项目数据绑定并保留未保存草稿:', projectPath)
 }

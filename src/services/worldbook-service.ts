@@ -11,7 +11,11 @@ import type {
 
 export async function listWorldbookEntries(
   session: ProjectSessionContext,
-  options: { includeReferenceContent?: boolean; currentChapter?: number } = {},
+  options: {
+    includeReferenceContent?: boolean
+    currentChapter?: number
+    systemPromptSeed?: string
+  } = {},
 ): Promise<WorldbookEntry[]> {
   return ipc.invokeWithProjectSession(session, 'worldbook:list', options, session.projectPath)
 }

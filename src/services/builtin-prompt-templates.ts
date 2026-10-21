@@ -28,7 +28,6 @@ export interface PromptTemplate {
 
 /** 允许用户自定义编辑的模板 Key 列表（其余为系统模板，不可编辑） */
 export const EDITABLE_PROMPT_KEYS: string[] = [
-  'direct_chat_system',
   'assistant_writing_identity',
   'generate_novel_config_field',
   'edit_selected_text',

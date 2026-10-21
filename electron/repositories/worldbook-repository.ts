@@ -8,14 +8,22 @@ import type {
   WorldbookResolveRequest,
   WorldbookResolveResult,
   WorldbookSourceCandidate,
+  WorldbookSourceKind,
   WorldbookStage,
 } from '../../src/shared/worldbook'
 import {
   WORLD_BOOK_ENTRY_KINDS,
   WORLD_BOOK_STAGES,
+  WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID,
+  WORLD_BOOK_SYSTEM_DIRECT_CHAT_SOURCE_KEY,
   defaultWorldbookActivation,
+  isWorldbookSystemEntry,
   resolveWorldbookEntries,
 } from '../../src/shared/worldbook'
+import {
+  composePromptSystemRole,
+  getBuiltinPromptTemplate,
+} from '../../src/services/builtin-prompt-templates'
 import { ProjectCoreRepository } from './project-core-repository'
 import { BlueprintRepository } from './blueprint-repository'
 import { NarrativeThreadRepository } from './narrative-thread-repository'
@@ -40,12 +48,46 @@ interface GenericEntryRow {
   kind: WorldbookEntryKind
   title: string
   content: string
-  source_kind: 'author' | 'import'
+  source_kind: WorldbookSourceKind
   source_key: string
   source_revision: string
   needs_review: number
   revision: number
   updated_at: string
+}
+
+function defaultSystemDirectChatSeed(): string {
+  const template = getBuiltinPromptTemplate('direct_chat_system', 'zh-CN')
+  if (!template) return '你是写作助手，用对话帮用户构思、讨论与润色。'
+  const role = composePromptSystemRole(template, 'zh-CN')
+  const body = template.content.trim()
+  return body ? `${role}\n\n${body}`.trim() : role.trim()
+}
+
+function systemDirectChatActivation(): WorldbookActivation {
+  return {
+    primaryKeys: [],
+    secondaryKeys: [],
+    matchMode: 'any',
+    alwaysOn: true,
+    enabled: true,
+    stages: ['setup', 'planning', 'drafting', 'review', 'finalization'],
+    priority: 10_000,
+    insertionOrder: -1,
+    group: 'system',
+    promptPolicy: 'full',
+  }
+}
+
+function lockSystemActivation(activation: WorldbookActivation): WorldbookActivation {
+  return {
+    ...validateActivation(activation),
+    alwaysOn: true,
+    enabled: true,
+    priority: Math.max(coerceActivationInt(activation.priority), 10_000),
+    insertionOrder: -1,
+    group: activation.group || 'system',
+  }
 }
 
 const KINDS = new Set<string>(WORLD_BOOK_ENTRY_KINDS)
@@ -384,16 +426,25 @@ function genericEntries(
 ): WorldbookEntry[] {
   const rows = db.prepare('SELECT * FROM worldbook_entries ORDER BY updated_at DESC,id').all() as GenericEntryRow[]
   return rows.map(row => {
-    const fallback = defaultWorldbookActivation(row.kind)
+    const system = isWorldbookSystemEntry(row.id) || row.source_kind === 'system'
+    const fallback = system ? systemDirectChatActivation() : defaultWorldbookActivation(row.kind)
+    const activation = system
+      ? lockSystemActivation(settingsFor(settings.get(row.id), fallback))
+      : settingsFor(settings.get(row.id), fallback)
     return {
       id: row.id,
       kind: row.kind,
       title: row.title,
       content: row.content,
       promptContent: row.content,
-      activation: settingsFor(settings.get(row.id), fallback),
-      source: { kind: row.source_kind, id: row.source_key || row.id, revision: row.source_revision },
+      activation,
+      source: {
+        kind: system ? 'system' : row.source_kind,
+        id: row.source_key || row.id,
+        revision: row.source_revision,
+      },
       editable: true,
+      deletable: !system,
       needsReview: row.needs_review === 1,
       revision: row.revision,
       updatedAt: row.updated_at,
@@ -447,7 +498,8 @@ function saveSettings(db: NonNullable<ReturnType<typeof getProjectDb>>, entryId:
 
 function sortEntries(entries: WorldbookEntry[]): WorldbookEntry[] {
   return [...entries].sort((left, right) => (
-    Number(right.activation.alwaysOn) - Number(left.activation.alwaysOn)
+    Number(isWorldbookSystemEntry(right)) - Number(isWorldbookSystemEntry(left))
+    || Number(right.activation.alwaysOn) - Number(left.activation.alwaysOn)
     || right.activation.priority - left.activation.priority
     || left.activation.insertionOrder - right.activation.insertionOrder
     || left.title.localeCompare(right.title)
@@ -495,10 +547,42 @@ async function collectProjections(
 }
 
 export class WorldbookRepository {
-  /** SillyTavern 式：只列作者/导入的可编辑条目，不含作品域投影。 */
-  static async list(_projectPath?: string, _options: { includeReferenceContent?: boolean; currentChapter?: number } = {}): Promise<WorldbookEntry[]> {
+  /** 确保直连系统提示常驻条目存在；已有则不动正文。 */
+  static ensureSystemDirectChatEntry(seedContent?: string): void {
     const db = getProjectDb()
     if (!db) throw new Error('项目数据库未打开')
+    if (db.prepare('SELECT 1 FROM worldbook_entries WHERE id=?').get(WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID)) return
+    const content = (seedContent?.trim() || defaultSystemDirectChatSeed()).trim()
+    if (!content || content.length > 2_000_000) throw new Error('WORLDBOOK_ENTRY_INVALID')
+    const title = '系统提示'
+    const sourceRevision = sha256(JSON.stringify([title, content]))
+    const activation = systemDirectChatActivation()
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO worldbook_entries(
+          id,kind,title,content,source_kind,source_key,source_revision,needs_review,revision,updated_at
+        ) VALUES(?,?,?,?,?,?,?,0,1,datetime('now'))
+      `).run(
+        WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID,
+        'rule',
+        title,
+        content,
+        'system',
+        WORLD_BOOK_SYSTEM_DIRECT_CHAT_SOURCE_KEY,
+        sourceRevision,
+      )
+      saveSettings(db, WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID, activation)
+    }).immediate()
+  }
+
+  /** SillyTavern 式：只列作者/导入/系统常驻的可编辑条目，不含作品域投影。 */
+  static async list(
+    _projectPath?: string,
+    options: { includeReferenceContent?: boolean; currentChapter?: number; systemPromptSeed?: string } = {},
+  ): Promise<WorldbookEntry[]> {
+    const db = getProjectDb()
+    if (!db) throw new Error('项目数据库未打开')
+    this.ensureSystemDirectChatEntry(options.systemPromptSeed)
     const settings = new Map((db.prepare('SELECT * FROM worldbook_entry_settings').all() as SettingsRow[])
       .map(row => [row.entry_id, row]))
     return sortEntries(genericEntries(db, settings))
@@ -566,8 +650,13 @@ export class WorldbookRepository {
     if (!title || title.length > 300 || typeof content !== 'string' || content.length > 2_000_000) {
       throw new Error('WORLDBOOK_ENTRY_INVALID')
     }
-    const activation = validateActivation(request.activation)
-    const sourceKind = request.sourceKind === 'import' ? 'import' : 'author'
+    const system = Boolean(request.id && isWorldbookSystemEntry(request.id))
+    const activation = system
+      ? lockSystemActivation(request.activation)
+      : validateActivation(request.activation)
+    const sourceKind: WorldbookSourceKind = system
+      ? 'system'
+      : request.sourceKind === 'import' ? 'import' : 'author'
     const sourceId = request.sourceId?.trim() ?? ''
     const sourceRevision = sha256(JSON.stringify([title, content]))
     return db.transaction(() => {
@@ -576,9 +665,15 @@ export class WorldbookRepository {
       if (existing && request.expectedRevision !== undefined && existing.revision !== request.expectedRevision) {
         throw new Error('WORLDBOOK_ENTRY_CONFLICT')
       }
+      if (existing && (isWorldbookSystemEntry(existing.id) || existing.source_kind === 'system') && !system) {
+        throw new Error('WORLDBOOK_ENTRY_PROTECTED')
+      }
       const id = existing?.id ?? `wb:${randomUUID()}`
-      const sourceKey = existing?.source_key
-        || (sourceId ? `${sourceId}:${sha256(JSON.stringify([title, content])).slice(0, 20)}` : '')
+      const sourceKey = system
+        ? WORLD_BOOK_SYSTEM_DIRECT_CHAT_SOURCE_KEY
+        : existing?.source_key
+          || (sourceId ? `${sourceId}:${sha256(JSON.stringify([title, content])).slice(0, 20)}` : '')
+      const kind = system ? 'rule' : request.kind
       db.prepare(`
         INSERT INTO worldbook_entries(
           id,kind,title,content,source_kind,source_key,source_revision,needs_review,revision,updated_at
@@ -586,8 +681,8 @@ export class WorldbookRepository {
         ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,title=excluded.title,content=excluded.content,
           source_kind=excluded.source_kind,source_key=excluded.source_key,source_revision=excluded.source_revision,
           needs_review=excluded.needs_review,revision=worldbook_entries.revision+1,updated_at=datetime('now')
-      `).run(id, request.kind, title, content, sourceKind, sourceKey, sourceRevision,
-        request.needsReview ? 1 : 0)
+      `).run(id, kind, title, content, sourceKind, sourceKey, sourceRevision,
+        system ? 0 : (request.needsReview ? 1 : 0))
       saveSettings(db, id, activation)
       const row = db.prepare('SELECT * FROM worldbook_entries WHERE id=?').get(id) as GenericEntryRow
       return {
@@ -599,6 +694,7 @@ export class WorldbookRepository {
         activation,
         source: { kind: row.source_kind, id: row.source_key || row.id, revision: row.source_revision },
         editable: true,
+        deletable: !system,
         needsReview: row.needs_review === 1,
         revision: row.revision,
         updatedAt: row.updated_at,
@@ -613,7 +709,9 @@ export class WorldbookRepository {
     if (!db.prepare('SELECT 1 FROM worldbook_entries WHERE id=?').get(request.entryId)) {
       throw new Error('WORLDBOOK_ENTRY_MISSING')
     }
-    const activation = validateActivation(request.activation)
+    const activation = isWorldbookSystemEntry(request.entryId)
+      ? lockSystemActivation(request.activation)
+      : validateActivation(request.activation)
     saveSettings(db, request.entryId, activation)
     return activation
   }
@@ -621,8 +719,12 @@ export class WorldbookRepository {
   static delete(entryId: string, expectedRevision: number): void {
     const db = getProjectDb()
     if (!db) throw new Error('项目数据库未打开')
-    const row = db.prepare('SELECT id,revision FROM worldbook_entries WHERE id=?').get(entryId) as { id: string; revision: number } | undefined
+    if (isWorldbookSystemEntry(entryId)) throw new Error('WORLDBOOK_ENTRY_PROTECTED')
+    const row = db.prepare('SELECT id,revision,source_kind FROM worldbook_entries WHERE id=?').get(entryId) as
+      | { id: string; revision: number; source_kind: string }
+      | undefined
     if (!row) throw new Error('WORLDBOOK_ENTRY_MISSING')
+    if (row.source_kind === 'system') throw new Error('WORLDBOOK_ENTRY_PROTECTED')
     if (row.revision !== expectedRevision) throw new Error('WORLDBOOK_ENTRY_CONFLICT')
     db.transaction(() => {
       db.prepare('DELETE FROM worldbook_entry_settings WHERE entry_id=?').run(entryId)
@@ -631,7 +733,7 @@ export class WorldbookRepository {
   }
 
   static async resolve(request: WorldbookResolveRequest, projectPath: string): Promise<WorldbookResolveResult> {
-    const entries = await this.list(projectPath)
+    const entries = (await this.list(projectPath)).filter(entry => !isWorldbookSystemEntry(entry))
     const query = [
       request.chapterTitle,
       request.blueprintText,

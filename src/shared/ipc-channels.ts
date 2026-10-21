@@ -61,6 +61,10 @@ import type {
   WorldbookSourceCandidate,
 } from './worldbook'
 import type {
+  AgentChatLoadResult,
+  PersistedAgentConversation,
+} from './agent-chat'
+import type {
   UpdateActionResponse,
   UpdateCheckResponse,
   UpdatePreferences,
@@ -1296,7 +1300,11 @@ export interface KnowledgeBaseChannels {
 
 export interface WorldbookChannels {
   'worldbook:list': {
-    args: [request: { includeReferenceContent?: boolean; currentChapter?: number } | undefined, expectedProjectPath: string]
+    args: [request: {
+      includeReferenceContent?: boolean
+      currentChapter?: number
+      systemPromptSeed?: string
+    } | undefined, expectedProjectPath: string]
     return: WorldbookEntry[]
   }
   'worldbook:list-sources': {
@@ -1322,6 +1330,29 @@ export interface WorldbookChannels {
   'worldbook:resolve': {
     args: [request: WorldbookResolveRequest, expectedProjectPath: string]
     return: WorldbookResolveResult
+  }
+}
+
+export interface AgentChatChannels {
+  'agent-chat:load': {
+    args: [expectedProjectPath: string]
+    return: AgentChatLoadResult
+  }
+  'agent-chat:upsert': {
+    args: [conversation: PersistedAgentConversation, expectedProjectPath: string]
+    return: { success: boolean; conversation?: PersistedAgentConversation; error?: string }
+  }
+  'agent-chat:delete': {
+    args: [conversationId: string, expectedProjectPath: string]
+    return: { success: boolean; error?: string }
+  }
+  'agent-chat:set-active': {
+    args: [activeConversationId: string | null, expectedProjectPath: string]
+    return: { success: boolean; error?: string }
+  }
+  'agent-chat:clear': {
+    args: [expectedProjectPath: string]
+    return: { success: boolean; error?: string }
   }
 }
 
@@ -1413,7 +1444,7 @@ export interface MCPChannels {
 }
 
 // ===== 合并所有频道 =====
-export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & WorldbookChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
+export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & WorldbookChannels & AgentChatChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
 export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */

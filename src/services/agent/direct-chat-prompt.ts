@@ -1,4 +1,8 @@
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
+import {
+  WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID,
+  isWorldbookSystemEntry,
+} from '../../shared/worldbook'
 import { resolveWritingLanguage, type WritingLanguage } from '../../shared/writing-language'
 import {
   composePromptSystemRole,
@@ -6,9 +10,10 @@ import {
   renderPrompt,
   resolvePromptTemplate,
 } from '../prompt-templates'
+import { listWorldbookEntries } from '../worldbook-service'
 
-/** 工作台直连对话的系统提示：从提示词目录读取。 */
-export async function buildDirectChatSystemPrompt(options?: {
+/** 从提示词模板拼出世界书系统条目的初始正文（迁移/种子用）。 */
+export async function composeDirectChatSystemSeed(options?: {
   writingLanguage?: WritingLanguage
   projectSession?: ProjectSessionContext
 }): Promise<string> {
@@ -28,4 +33,31 @@ export async function buildDirectChatSystemPrompt(options?: {
     {},
     writingLanguage,
   )}`.trim()
+}
+
+/** 工作台直连对话的系统提示：优先读世界书置顶常驻条目。 */
+export async function buildDirectChatSystemPrompt(options?: {
+  writingLanguage?: WritingLanguage
+  projectSession?: ProjectSessionContext
+}): Promise<string> {
+  const writingLanguage = resolveWritingLanguage(options?.writingLanguage)
+  const seed = await composeDirectChatSystemSeed({
+    writingLanguage,
+    projectSession: options?.projectSession,
+  })
+
+  const session = options?.projectSession
+  if (!session) return seed
+
+  try {
+    const entries = await listWorldbookEntries(session, { systemPromptSeed: seed })
+    const systemEntry = entries.find(entry => isWorldbookSystemEntry(entry)
+      || entry.id === WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID)
+    const content = systemEntry?.content.trim()
+    if (content) return content
+  } catch {
+    // 无会话库或加载失败时回退模板种子
+  }
+
+  return seed
 }

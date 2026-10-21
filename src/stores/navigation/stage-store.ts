@@ -26,6 +26,9 @@ export interface PendingDraftAdopt {
 /** 命令面板：commands 是搜索与跳转（⌘K / Ctrl K），chapters 只查章节（⌘P / Ctrl P）。 */
 export type StagePalette = 'commands' | 'chapters'
 
+/** 聊天优先外壳上的全屏覆盖层（世界书等）；设置仍走 layout-store.settingsOpen。 */
+export type ChatOverlay = 'worldbook' | null
+
 /** 流程脊从项目数据派生状态时用到、而 project-store 与 draft-store 里没有的两项。 */
 export interface StageWork {
   /** 这份数据属于哪次打开；同一路径重新打开是新的会话，旧数据不能当新的用。 */
@@ -42,6 +45,8 @@ interface StageState {
   /** 沉浸写作：只留正文与章节动作条。 */
   focus: boolean
   palette: StagePalette | null
+  /** 聊天外壳覆盖层；回到书房时清空。 */
+  chatOverlay: ChatOverlay
   work: StageWork | null
   /** 有未保存修改、等作者确认是否放弃的待关闭标签。 */
   closingTabId: string | null
@@ -63,6 +68,7 @@ export const useStageStore = create<StageState>()(() => ({
   rightRail: 'chat',
   focus: false,
   palette: null,
+  chatOverlay: null,
   work: null,
   closingTabId: null,
   writeRequest: null,

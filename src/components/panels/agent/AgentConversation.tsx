@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, Trash2, Workflow } from 'lucide-react'
+import { ArrowDown, Trash2 } from 'lucide-react'
 import { useAgentStore } from '../../../stores/agent-store'
-import { navigate } from '../../../stores/navigation/navigation-intents'
 import { APP_BRAND } from '../../../shared/brand'
 import AgentMessage from './AgentMessage'
 import AgentInputBox from './AgentInputBox'
@@ -44,11 +43,8 @@ function EmptyState() {
 
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div
-        className="px-4"
-        style={{ paddingTop: 'max(22vh, 48px)', paddingBottom: 24 }}
-      >
+    <div className="h-full overflow-y-auto flex flex-col justify-center">
+      <div className="px-4 py-6">
         {/* 标题 */}
         <div className="mb-1 pl-1 text-base font-semibold" style={{ color: 'var(--color-text)' }}>
           {text(APP_BRAND.zhName, APP_BRAND.enName)}
@@ -60,8 +56,6 @@ function EmptyState() {
 
         {/* 输入框 */}
         <AgentInputBox />
-
-
 
         {/* 最近会话（如有） */}
         {recentConvs.length > 0 && (
@@ -182,52 +176,13 @@ function ActiveConversation() {
         </button>
       )}
 
-      {/* 底部工具栏 + 输入区 */}
+      {/* 底部输入区（AI 工作流入口暂时隐藏） */}
       <div
         className="flex-shrink-0 px-3 pb-3 pt-2"
         style={{ borderTop: '1px solid var(--color-border)' }}
       >
-        <AgentToolbar />
         <AgentInputBox />
       </div>
-    </div>
-  )
-}
-
-// ===== Agent 底部工具栏（小说创作场景） =====
-
-/**
- * 重构后的工具栏：贴合小说创作场景
- * 左侧：快速引用按钮（架构、角色、蓝图）
- * 右侧：打开运行侧页的按钮
- */
-function AgentToolbar() {
-  const text = useLocaleStore(s => s.text)
-
-  return (
-    <div className="flex items-center justify-end mb-1.5">
-
-      {/* 右侧：打开运行侧页 */}
-      <button
-        onClick={() => navigate({ kind: 'run', facet: 'output' })}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all select-none"
-        style={{
-          color: 'var(--color-text-muted)',
-          border: '1px solid var(--color-border)',
-        }}
-        title={text('切换到 AI 输出面板', 'Switch to AI output panel')}
-        onMouseEnter={e => {
-          e.currentTarget.style.backgroundColor = 'var(--color-hover)'
-          e.currentTarget.style.color = 'var(--color-text)'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.backgroundColor = 'transparent'
-          e.currentTarget.style.color = 'var(--color-text-muted)'
-        }}
-      >
-        <Workflow size={12} strokeWidth={1.75} />
-        {text('AI 工作流', 'AI workflow')}
-      </button>
     </div>
   )
 }

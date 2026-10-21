@@ -240,6 +240,7 @@ describe('built-in model-neutral prompt contract', () => {
   it('does not advertise prompt editors that have no production consumer', () => {
     expect(EDITABLE_PROMPT_KEYS).not.toContain('chapter_blueprint')
     expect(EDITABLE_PROMPT_KEYS).not.toContain('extract_initial_characters')
+    expect(EDITABLE_PROMPT_KEYS).not.toContain('direct_chat_system')
   })
   it('keeps character-card extraction compatible with JSON-object response mode', () => {
     const text = promptText('extract_initial_characters')

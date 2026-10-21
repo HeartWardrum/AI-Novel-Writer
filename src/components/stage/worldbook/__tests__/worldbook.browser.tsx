@@ -34,7 +34,25 @@ beforeEach(async () => {
   await page.viewport(1280, 960)
   const activation = defaultWorldbookActivation('world')
   activation.primaryKeys = ['灯塔']
+  const systemActivation = defaultWorldbookActivation('rule')
+  systemActivation.alwaysOn = true
+  systemActivation.priority = 10_000
+  systemActivation.insertionOrder = -1
+  systemActivation.group = 'system'
   entries = [{
+    id: 'wb:system:direct-chat',
+    kind: 'rule',
+    title: '系统提示',
+    content: '你是写作助手。',
+    promptContent: '你是写作助手。',
+    activation: systemActivation,
+    source: { kind: 'system', id: 'direct-chat', revision: '1' },
+    editable: true,
+    deletable: false,
+    needsReview: false,
+    revision: 1,
+    updatedAt: '',
+  }, {
     id: 'wb:world',
     kind: 'world',
     title: '世界观',
@@ -111,6 +129,13 @@ beforeEach(async () => {
       entries = entries.map(entry => entry.id === saved.id ? saved : entry)
       return { success: true, entry: saved }
     }
+    if (channel === 'worldbook:save-activation') {
+      const request = args[0] as { entryId: string; activation: WorldbookEntry['activation'] }
+      entries = entries.map(entry => entry.id === request.entryId
+        ? { ...entry, activation: request.activation }
+        : entry)
+      return { success: true, activation: request.activation }
+    }
     if (channel === 'worldbook:resolve') return {
       selections: [{ entryId: 'wb:world', title: '世界观', kind: 'world', content: entries[0]!.content,
         source: entries[0]!.source, revision: 1, reason: 'primary-key', matchedKeys: ['灯塔'], score: 20, estimatedTokens: 8 }],
@@ -148,11 +173,17 @@ describe('worldbook workspace', () => {
     await vi.waitFor(() => expect(host!.querySelector('.worldbook-entry-list')).toBeTruthy())
     expect(host!.querySelector('.worldbook-list')?.textContent).toContain('世界书')
     expect(host!.querySelector('.worldbook-detail')).toBeTruthy()
+    expect(host!.querySelector('.worldbook-entry-list')?.textContent).toContain('系统提示')
     expect(host!.querySelector('.worldbook-entry-list')?.textContent).toContain('世界观')
     expect(host!.querySelector('.worldbook-entry-list')?.textContent).toContain('雾钟')
-    expect(host!.querySelector<HTMLInputElement>('.worldbook-title-input')?.value).toBe('世界观')
+    expect(host!.querySelector<HTMLInputElement>('.worldbook-title-input')?.value).toBe('系统提示')
     expect(host!.querySelector<HTMLInputElement>('.worldbook-title-input')?.readOnly).toBe(false)
-    expect(host!.querySelector('.worldbook-trigger')?.textContent).toContain('何时进入上下文')
+    expect([...host!.querySelectorAll('button')].some(button => button.textContent?.includes('删除'))).toBe(false)
+    expect(host!.querySelector<HTMLInputElement>('.worldbook-entry-enabled input')?.disabled).toBe(true)
+    expect(host!.querySelector('.worldbook-trigger')?.textContent).toContain('何时进入对话')
+    expect(host!.querySelector('.worldbook-trigger')?.textContent).toContain('关键词')
+    expect(host!.querySelector('.worldbook-trigger')?.textContent).toContain('命中任一')
+    expect(host!.querySelector('.worldbook-entry-enabled input[type="checkbox"]')).toBeTruthy()
     expect([...host!.querySelectorAll('button')].some(button => button.textContent?.includes('从作品导入'))).toBe(true)
   })
 
@@ -170,20 +201,13 @@ describe('worldbook workspace', () => {
     await vi.waitFor(() => expect(host!.querySelector('.worldbook-entry-list')?.textContent).toContain('世界观设定'))
   })
 
-  it('previews exact-key activation with reason and token budget', async () => {
+  it('toggles enabled from the list checkbox and persists activation', async () => {
     await act(async () => root!.render(<StageWorldbook projectKey={session.projectPath} />))
-    await vi.waitFor(() => expect(host!.querySelector('.worldbook-preview-box')).toBeTruthy())
-    const context = host!.querySelector<HTMLTextAreaElement>('.worldbook-preview-box textarea')!
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
-      setter.call(context, '灯塔的夜')
-      context.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    const previewButton = [...host!.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.includes('预演'))!
-    await act(async () => previewButton.click())
-    await vi.waitFor(() => expect(host!.querySelector('.worldbook-preview-result')?.textContent).toContain('世界观'))
-    expect(host!.querySelector('.worldbook-preview-result')?.textContent).toContain('primary-key')
-    expect(invoke.mock.calls.some(([channel]) => channel === 'worldbook:resolve')).toBe(true)
+    await vi.waitFor(() => expect(host!.querySelector('.worldbook-entry-enabled input')).toBeTruthy())
+    const checkboxes = [...host!.querySelectorAll<HTMLInputElement>('.worldbook-entry-enabled input')]
+    const checkbox = checkboxes.find(item => !item.disabled)!
+    expect(checkbox.checked).toBe(true)
+    await act(async () => checkbox.click())
+    await vi.waitFor(() => expect(invoke.mock.calls.some(([channel]) => channel === 'worldbook:save-activation')).toBe(true))
   })
 })

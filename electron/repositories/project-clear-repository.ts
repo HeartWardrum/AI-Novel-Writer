@@ -107,6 +107,12 @@ export class ProjectClearRepository {
                     db.prepare('DELETE FROM drafts').run()
                     db.prepare('DELETE FROM contents').run()
                     db.prepare('DELETE FROM summary_snapshots').run()
+                    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_conversations'").get()) {
+                      db.prepare('DELETE FROM agent_conversations').run()
+                    }
+                    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_chat_meta'").get()) {
+                      db.prepare('DELETE FROM agent_chat_meta').run()
+                    }
                     cleared.push('generatedText')
                 }
 

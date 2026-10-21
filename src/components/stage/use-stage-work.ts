@@ -12,7 +12,7 @@ import {
 } from '../../stores/navigation/stage-progress'
 import { refreshChapterFacts } from '../../stores/navigation/chapter-facts'
 import { useStageStore } from '../../stores/navigation/stage-store'
-import { navigate, type WorkStage } from '../../stores/navigation/navigation-intents'
+import type { WorkStage } from '../../stores/navigation/navigation-intents'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore, type WorkflowRun } from '../../stores/workflow-store'
 import { shouldRefreshBlueprints } from '../editor/blueprint-refresh'
@@ -182,8 +182,8 @@ export function useStageView(): StageView {
 }
 
 /**
- * 打开作品时落到正文（当前该写的章）；不等设定填完。每次打开（项目会话）只落一次；这次打开已有标签时保持原样。
- * 仍等架构/蓝图/草稿载入完成（view.landing 非空）再落，但目标固定为 manuscript。
+ * 打开作品时标记已落地；聊天优先外壳不再自动打开正文标签。
+ * 仍等架构/蓝图/草稿载入完成（view.landing 非空）再标记，避免与脊数据竞态；每次打开（项目会话）只落一次。
  */
 export function useLandingPage(view: StageView): void {
   const project = useProjectStore(s => s.currentProject)
@@ -199,6 +199,5 @@ export function useLandingPage(view: StageView): void {
     }
     if (!view.landing) return
     landed.current = key
-    navigate({ kind: 'stage', stage: 'manuscript' })
   }, [project, view.landing])
 }

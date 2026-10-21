@@ -16,8 +16,8 @@ import { SETTINGS_PAGES } from './settings/settings-pages'
 import { preloadStagePages } from './stage-pages'
 import StagePalette from './StagePalette'
 import { paletteItem, type PaletteItem } from './palette-filter'
-import MaterialsRail from './MaterialsRail'
-import WorkbenchRight from './WorkbenchRight'
+import ChatTopBar from './ChatTopBar'
+import ChatWorkbench from './ChatWorkbench'
 import StageTopBar from './StageTopBar'
 import StageWorkspace from './StageWorkspace'
 import ReferenceFloatLayer from './reference/ReferenceFloatLayer'
@@ -25,10 +25,14 @@ import { usePendingDraftAdoptFromWorkflow } from './DraftAdoptBanner'
 import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES, STAGE_NAMES, stageTabName } from './stage-text'
 import { refreshStageWork, useLandingPage, useStageView, useStageWorkRefresh, type StageView } from './use-stage-work'
 import { useStageShortcuts } from './use-stage-shortcuts'
+import './chat-workbench.css'
 
 type Text = (zh: string, en: string) => string
 
-const backToLibrary = () => leaveSettingsThen(() => useLayoutStore.getState().setSidebarView('home'))
+const backToLibrary = () => leaveSettingsThen(() => {
+  useStageStore.setState({ chatOverlay: null })
+  useLayoutStore.getState().setSidebarView('home')
+})
 const newBook = () => leaveSettingsThen(() => useLayoutStore.getState().openNewProject())
 const importNovel = () => leaveSettingsThen(() => useLayoutStore.getState().openImportNovel())
 
@@ -68,6 +72,7 @@ export default function StageShell({ theme }: { theme: Theme }) {
 
   useEffect(() => {
     if (library && useStageStore.getState().focus) useStageStore.setState({ focus: false })
+    if (library && useStageStore.getState().chatOverlay) useStageStore.setState({ chatOverlay: null })
   }, [library])
 
   useEffect(() => {
@@ -118,7 +123,13 @@ export default function StageShell({ theme }: { theme: Theme }) {
     const references = hasProject && !library ? [
       ...(Object.keys(RESOURCE_NAMES) as (keyof typeof RESOURCE_NAMES)[]).map(page => paletteItem('reference', {
         id: `resource-${page}`, label: text(...RESOURCE_NAMES[page]),
-        run: () => navigate({ kind: 'resource', page }),
+        run: () => {
+          if (page === 'worldbook') {
+            leaveSettingsThen(() => useStageStore.setState({ chatOverlay: 'worldbook' }))
+            return
+          }
+          navigate({ kind: 'resource', page })
+        },
       })),
       paletteItem('reference', { id: 'characters', label: text('角色名单', 'Cast'), keywords: 'roster characters 角色',
         run: () => leaveSettingsThen(() => openBuiltinEditor('character-editor', text('角色名单', 'Cast'), 'character')) }),
@@ -133,8 +144,7 @@ export default function StageShell({ theme }: { theme: Theme }) {
       paletteItem('action', { id: 'import', label: text('小说拆解与仿写', 'Novel breakdown & imitation'), run: importNovel }),
       ...(hasProject ? [
         paletteItem('action', { id: 'library', label: text('回到书房', 'Back to library'), run: backToLibrary }),
-        paletteItem('action', { id: 'run', label: text('运行', 'Run'), keywords: 'AI 输出 任务 日志', run: () => navigate({ kind: 'run', facet: 'output' }) }),
-        paletteItem('action', { id: 'chat', label: text('对话', 'Chat'), keywords: '助手 AI 聊天', run: () => useStageStore.setState({ rightRail: 'chat' }) }),
+        paletteItem('action', { id: 'chat', label: text('对话', 'Chat'), keywords: '助手 AI 聊天', run: () => useStageStore.setState({ rightRail: 'chat', chatOverlay: null }) }),
         paletteItem('action', { id: 'export', label: text('导出', 'Export'), run: () => useLayoutStore.getState().openExport() }),
         paletteItem('action', { id: 'backup', label: text('项目备份', 'Project backup'), run: () => navigate({ kind: 'settings', section: 'backup' }) }),
       ] : []),
@@ -155,41 +165,38 @@ export default function StageShell({ theme }: { theme: Theme }) {
       ref={setRoot}
       className="paper-ink stage-shell"
       data-theme={theme}
-      data-shell-presentation="stage"
+      data-shell-presentation={library ? 'stage' : 'chat'}
       data-focus={focus || undefined}
       data-library={library || undefined}
     >
-      <StageTopBar
-        crumbs={crumbs}
-        library={library}
-        focus={focus}
-        focusTitle={focusTitle}
-        workMenu={workMenu}
-        onToggleFocus={toggleFocus}
-      />
-      <div className="stage-frame" data-workbench={!library || undefined}>
-        {!library && !focus && (
-          <MaterialsRail
-            stages={view.stages}
-            chapters={view.chapters}
-            location={view.location}
-            settingsOpen={settingsOpen}
-            onStage={stage => navigate({ kind: 'stage', stage })}
-            onChapter={chapterNumber => navigate({ kind: 'chapter', chapterNumber })}
-            onResource={page => navigate({ kind: 'resource', page })}
+      {library ? (
+        <>
+          <StageTopBar
+            crumbs={crumbs}
+            library={library}
+            focus={focus}
+            focusTitle={focusTitle}
+            workMenu={workMenu}
+            onToggleFocus={toggleFocus}
+          />
+          <div className="stage-frame">
+            <StageWorkspace library focus={false} />
+          </div>
+        </>
+      ) : (
+        <>
+          <ChatTopBar
+            onLibrary={backToLibrary}
+            onWorldbook={() => leaveSettingsThen(() => useStageStore.setState({ chatOverlay: 'worldbook' }))}
             onSettings={() => navigate({ kind: 'settings', section: 'llm' })}
           />
-        )}
-        <StageWorkspace library={library} focus={focus} />
-        {!library && (
-          <WorkbenchRight
+          <ChatWorkbench
             mode={rightRail}
             onMode={mode => useStageStore.setState({ rightRail: mode })}
             sheet={sheet}
-            focus={focus}
           />
-        )}
-      </div>
+        </>
+      )}
       <StagePalette mode={palette} items={paletteItems} container={root} onClose={() => useStageStore.setState({ palette: null })} />
       <ClearProjectDataDialog open={clearOpen} onClose={() => setClearOpen(false)} onCleared={() => refreshStageWork(text)} />
       <NewWorkDialog />

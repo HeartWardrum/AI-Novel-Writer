@@ -1,17 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildDirectChatSystemPrompt } from '../../services/agent/direct-chat-prompt'
 import { formatDirectChatContinuity } from '../../services/agent/direct-chat-continuity'
-import * as promptTemplates from '../../services/prompt-templates'
-import { getBuiltinPromptTemplate } from '../../services/prompt-templates'
+import { formatDirectChatWorldbook } from '../../services/agent/direct-chat-worldbook'
 import type { ProjectData } from '../../shared/ipc-channels'
+import type { WorldbookResolveResult } from '../../shared/worldbook'
 import { useAgentStore } from '../agent-store'
 import { useEditorStore } from '../editor-store'
 import { useLLMStore } from '../llm-store'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 
-const { invokeWithProjectSession } = vi.hoisted(() => ({
+const { invokeWithProjectSession, resolveWorldbook } = vi.hoisted(() => ({
   invokeWithProjectSession: vi.fn(async () => []),
+  resolveWorldbook: vi.fn(async () => ({
+    selections: [] as WorldbookResolveResult['selections'],
+    omitted: [] as WorldbookResolveResult['omitted'],
+    tokenEstimate: 0,
+    budgetTokens: 4000,
+    requiredOverflow: false,
+  })),
 }))
 
 vi.mock('../../services/ipc-client', () => ({
@@ -20,6 +27,14 @@ vi.mock('../../services/ipc-client', () => ({
     invokeWithProjectSession,
   },
 }))
+
+vi.mock('../../services/worldbook-service', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/worldbook-service')>()
+  return {
+    ...actual,
+    resolveWorldbook,
+  }
+})
 
 const originalEditor = useEditorStore.getState()
 const originalProject = useProjectStore.getState()
@@ -69,6 +84,14 @@ describe('direct chat sendMessage', () => {
     useProjectStore.setState({ currentProject: null })
     invokeWithProjectSession.mockReset()
     invokeWithProjectSession.mockResolvedValue([])
+    resolveWorldbook.mockReset()
+    resolveWorldbook.mockResolvedValue({
+      selections: [],
+      omitted: [],
+      tokenEstimate: 0,
+      budgetTokens: 4000,
+      requiredOverflow: false,
+    })
   })
 
   afterEach(() => {
@@ -167,12 +190,39 @@ describe('direct chat sendMessage', () => {
     expect(generateStream.mock.calls[0][0]).toEqual(last?.requestDebug?.messages)
   })
 
-  it('uses a custom direct_chat_system override in requestDebug', async () => {
-    const builtin = getBuiltinPromptTemplate('direct_chat_system', 'zh-CN')!
-    const resolveSpy = vi.spyOn(promptTemplates, 'resolvePromptTemplate').mockResolvedValue({
-      ...builtin,
-      systemRole: '自定义直连身份，请提醒用户使用写本章。',
-    })
+  it('uses the worldbook system prompt entry in requestDebug', async () => {
+    const project = demoProject()
+    useProjectStore.setState({ currentProject: project })
+    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string) => {
+      if (channel === 'worldbook:list') {
+        return [{
+          id: 'wb:system:direct-chat',
+          kind: 'rule',
+          title: '系统提示',
+          content: '自定义直连身份，请提醒用户使用写本章。',
+          promptContent: '自定义直连身份，请提醒用户使用写本章。',
+          activation: {
+            primaryKeys: [],
+            secondaryKeys: [],
+            matchMode: 'any',
+            alwaysOn: true,
+            enabled: true,
+            stages: ['drafting'],
+            priority: 10_000,
+            insertionOrder: -1,
+            group: 'system',
+            promptPolicy: 'full',
+          },
+          source: { kind: 'system', id: 'direct-chat', revision: '1' },
+          editable: true,
+          deletable: false,
+          needsReview: false,
+          revision: 1,
+          updatedAt: '',
+        }]
+      }
+      return []
+    }) as never)
     const generateStream = vi.fn(async (_messages, callbacks) => {
       callbacks.onDone?.('ok')
       return 'stream-req-6'
@@ -183,11 +233,10 @@ describe('direct chat sendMessage', () => {
     await useAgentStore.getState().sendMessage('覆盖测试')
 
     const system = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages[0]?.content
-    expect(system).toContain('自定义直连身份')
+    expect(system).toBe('自定义直连身份，请提醒用户使用写本章。')
     expect(system).toContain('写本章')
     expect(system).not.toContain('简短梳理')
     expect(system).not.toContain('直接简洁作答')
-    resolveSpy.mockRestore()
   })
 
   it('injects finalized continuity notes into llmMessages and requestDebug', async () => {
@@ -244,6 +293,196 @@ describe('direct chat sendMessage', () => {
     const messages = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages ?? []
     expect(messages.filter(m => m.role === 'system')).toHaveLength(1)
     expect(messages.some(m => m.content.includes('已定稿前文'))).toBe(false)
+  })
+
+  it('injects matched worldbook entries into llmMessages and requestDebug', async () => {
+    const project = demoProject()
+    useProjectStore.setState({ currentProject: project })
+    resolveWorldbook.mockResolvedValue({
+      selections: [{
+        entryId: 'wb-1',
+        title: '灯塔守则',
+        kind: 'rule',
+        content: '雾钟提前一刻响起。',
+        source: { kind: 'author', id: 'wb-1', revision: '1' },
+        revision: 1,
+        reason: 'primary-key',
+        matchedKeys: ['灯塔'],
+        score: 20,
+        estimatedTokens: 12,
+      }],
+      omitted: [],
+      tokenEstimate: 12,
+      budgetTokens: 4000,
+      requiredOverflow: false,
+    })
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('记下了')
+      return 'stream-req-9'
+    })
+    useLLMStore.setState({ generateStream })
+
+    useAgentStore.getState().createConversation()
+    await useAgentStore.getState().sendMessage('说说灯塔')
+
+    expect(resolveWorldbook).toHaveBeenCalledWith(
+      { projectId: 'p1', leaseId: 'lease-1', projectPath: 'C:\\novels\\demo' },
+      expect.objectContaining({
+        stage: 'drafting',
+        draftText: '说说灯塔',
+        authorGuidance: '说说灯塔',
+        budgetTokens: 4000,
+      }),
+    )
+    const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    const messages = last?.requestDebug?.messages ?? []
+    expect(last?.requestDebug?.meta.worldbookCount).toBe(1)
+    expect(messages.some(m => m.role === 'system' && m.content.includes('【世界书】'))).toBe(true)
+    expect(messages.some(m => m.content.includes('雾钟提前一刻响起。'))).toBe(true)
+    expect(generateStream.mock.calls[0][0]).toEqual(messages)
+  })
+
+  it('continues chat when worldbook resolve fails', async () => {
+    useProjectStore.setState({ currentProject: demoProject() })
+    resolveWorldbook.mockRejectedValue(new Error('offline'))
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('仍可聊')
+      return 'stream-req-10'
+    })
+    useLLMStore.setState({ generateStream })
+
+    useAgentStore.getState().createConversation()
+    await useAgentStore.getState().sendMessage('灯塔')
+
+    const messages = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages ?? []
+    expect(messages.some(m => m.content.includes('【世界书】'))).toBe(false)
+    expect(useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.content).toBe('仍可聊')
+  })
+
+  it('upserts the conversation after send without requestDebug', async () => {
+    const project = demoProject()
+    useProjectStore.setState({ currentProject: project })
+    const upserted: unknown[] = []
+    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string, ...args: unknown[]) => {
+      if (channel === 'agent-chat:load') {
+        return { conversations: [], activeConversationId: null }
+      }
+      if (channel === 'agent-chat:upsert') {
+        upserted.push(args[0])
+        return { success: true, conversation: args[0] }
+      }
+      if (channel === 'agent-chat:set-active') {
+        return { success: true }
+      }
+      return []
+    }) as never)
+
+    await useAgentStore.getState().hydrateFromProject({
+      projectId: project.id,
+      leaseId: project.sessionLease!,
+      projectPath: project.path,
+    })
+    useAgentStore.getState().createConversation()
+    await vi.waitFor(() => expect(upserted.length).toBeGreaterThan(0))
+    upserted.length = 0
+
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('雾钟响了')
+      return 'stream-req-persist'
+    })
+    useLLMStore.setState({ generateStream })
+    await useAgentStore.getState().sendMessage('说说灯塔')
+
+    await vi.waitFor(() => expect(upserted.length).toBeGreaterThan(0))
+    const payload = upserted.at(-1) as {
+      messages: Array<{ content: string; requestDebug?: unknown }>
+    }
+    expect(payload.messages.map(m => m.content)).toEqual(['说说灯塔', '雾钟响了'])
+    expect(payload.messages.every(m => !('requestDebug' in m) || m.requestDebug === undefined)).toBe(true)
+  })
+})
+
+describe('agent chat hydrateFromProject', () => {
+  beforeEach(() => {
+    useAgentStore.setState({
+      conversations: [],
+      activeConversationId: null,
+      generating: false,
+      activeRequestId: null,
+      toolsInitialized: false,
+    })
+    useProjectStore.setState({ currentProject: null })
+    invokeWithProjectSession.mockReset()
+  })
+
+  afterEach(() => {
+    useProjectStore.setState(originalProject, true)
+  })
+
+  it('loads conversations from the project database into the store', async () => {
+    const project = demoProject()
+    useProjectStore.setState({ currentProject: project })
+    const now = Date.now()
+    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string) => {
+      if (channel === 'agent-chat:load') {
+        return {
+          conversations: [
+            {
+              id: 'c1',
+              title: '灯塔夜谈',
+              modelId: 'model-a',
+              createdAt: now,
+              updatedAt: now + 2,
+              messages: [
+                { id: 'm1', role: 'user', content: '说说灯塔', createdAt: now },
+                { id: 'm2', role: 'assistant', content: '雾钟提前一刻响起。', createdAt: now + 1 },
+              ],
+            },
+            {
+              id: 'c2',
+              title: '第二段',
+              modelId: null,
+              createdAt: now - 10,
+              updatedAt: now - 5,
+              messages: [{ id: 'n1', role: 'user', content: '继续', createdAt: now - 8 }],
+            },
+          ],
+          activeConversationId: 'c1',
+        }
+      }
+      return []
+    }) as never)
+
+    await useAgentStore.getState().hydrateFromProject({
+      projectId: project.id,
+      leaseId: project.sessionLease!,
+      projectPath: project.path,
+    })
+
+    expect(useAgentStore.getState().conversations.map(c => c.id)).toEqual(['c1', 'c2'])
+    expect(useAgentStore.getState().activeConversationId).toBe('c1')
+    expect(useAgentStore.getState().getActiveConversation()?.messages.map(m => m.content))
+      .toEqual(['说说灯塔', '雾钟提前一刻响起。'])
+  })
+})
+
+describe('formatDirectChatWorldbook', () => {
+  it('formats selected entries under a worldbook heading', () => {
+    const block = formatDirectChatWorldbook([{
+      entryId: 'wb-1',
+      title: '灯塔',
+      kind: 'location',
+      content: '守塔人擦亮了灯罩。',
+      source: { kind: 'author', id: 'wb-1', revision: '1' },
+      revision: 1,
+      reason: 'primary-key',
+      matchedKeys: ['灯塔'],
+      score: 20,
+      estimatedTokens: 10,
+    }])
+    expect(block).toContain('【世界书】')
+    expect(block).toContain('### 灯塔')
+    expect(block).toContain('守塔人擦亮了灯罩。')
   })
 })
 

@@ -16,7 +16,7 @@ import {
   importWorldbookSources,
   listWorldbookEntries,
   listWorldbookSources,
-  resolveWorldbook,
+  saveWorldbookActivation,
   saveWorldbookEntry,
 } from '../../../services/worldbook-service'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -24,15 +24,15 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import {
   WORLD_BOOK_ENTRY_KINDS,
-  WORLD_BOOK_STAGES,
   defaultWorldbookActivation,
+  isWorldbookSystemEntry,
   type WorldbookActivation,
   type WorldbookEntry,
   type WorldbookEntryKind,
-  type WorldbookResolveResult,
   type WorldbookSourceCandidate,
-  type WorldbookStage,
 } from '../../../shared/worldbook'
+import { resolveWritingLanguage } from '../../../shared/writing-language'
+import { composeDirectChatSystemSeed } from '../../../services/agent/direct-chat-prompt'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
 import { sameProjectPathKey } from '../../../shared/project-session-context'
 import { Button } from '../../ui/Button'
@@ -68,14 +68,6 @@ const KIND_NAMES: Record<WorldbookEntryKind, [string, string]> = {
   custom: ['自定义', 'Custom'],
 }
 
-const STAGE_NAMES: Record<WorldbookStage, [string, string]> = {
-  setup: ['设定', 'Setup'],
-  planning: ['规划', 'Planning'],
-  drafting: ['写稿', 'Drafting'],
-  review: ['审稿', 'Review'],
-  finalization: ['定稿', 'Finalization'],
-}
-
 function textValue(value: string): string {
   return value.trim()
 }
@@ -96,6 +88,7 @@ function parseKeys(value: string): string[] {
 }
 
 function sourceLabel(entry: WorldbookEntry, text: Text): string {
+  if (isWorldbookSystemEntry(entry) || entry.source.kind === 'system') return text('系统内置', 'Built-in system')
   if (entry.source.kind === 'import') return text('从作品导入', 'Imported from work')
   return text('作者新建', 'Author-created')
 }
@@ -140,7 +133,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | WorldbookEntryKind>('all')
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'author' | 'import'>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'author' | 'import' | 'system'>('all')
   const [onlyEnabled, setOnlyEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -148,11 +141,6 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftContent, setDraftContent] = useState('')
   const [draftActivation, setDraftActivation] = useState<WorldbookActivation>(defaultWorldbookActivation())
-  const [previewStage, setPreviewStage] = useState<WorldbookStage>('drafting')
-  const [previewChapter, setPreviewChapter] = useState('1')
-  const [previewContext, setPreviewContext] = useState('')
-  const [preview, setPreview] = useState<WorldbookResolveResult | null>(null)
-  const [previewing, setPreviewing] = useState(false)
   const [splitProposals, setSplitProposals] = useState<SplitProposal[] | null>(null)
   const [splitting, setSplitting] = useState(false)
   const [importCandidates, setImportCandidates] = useState<Array<WorldbookSourceCandidate & { selected: boolean }> | null>(null)
@@ -179,7 +167,6 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     setDraftTitle(entry?.title ?? '')
     setDraftContent(entry?.content ?? '')
     setDraftActivation(cloneActivation(entry?.activation ?? defaultWorldbookActivation()))
-    setPreview(null)
   }
 
   const load = useCallback(async (preferredEntryId?: string) => {
@@ -190,7 +177,14 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     setLoading(true)
     setError('')
     try {
-      const loaded = await listWorldbookEntries(session)
+      const writingLanguage = resolveWritingLanguage(project?.novelConfig.writingLanguage)
+      const systemPromptSeed = await composeDirectChatSystemSeed({
+        writingLanguage,
+        projectSession: session,
+      }).catch(() => undefined)
+      const loaded = await listWorldbookEntries(session, {
+        ...(systemPromptSeed ? { systemPromptSeed } : {}),
+      })
       if (!isProjectSessionCurrent(session)) return
       const next = dedupeById(loaded)
       const drafting = newDraftRef.current
@@ -216,7 +210,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     } finally {
       if (isProjectSessionCurrent(session)) setLoading(false)
     }
-  }, [session])
+  }, [project?.novelConfig.writingLanguage, session])
 
   useEffect(() => {
     queueMicrotask(() => void load())
@@ -264,7 +258,6 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     setDraftTitle('')
     setDraftContent('')
     setDraftActivation(activation)
-    setPreview(null)
   }
 
   const save = async () => {
@@ -279,12 +272,19 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     }
     setSaving(true)
     try {
+      const system = isWorldbookSystemEntry(selected)
+      const activation = cloneActivation({
+        ...draftActivation,
+        ...(system ? { alwaysOn: true, enabled: true } : {}),
+        secondaryKeys: [],
+        promptPolicy: draftActivation.promptPolicy || 'full',
+      })
       const saved = await saveWorldbookEntry(session, {
         ...(selected.id === '__new__' ? {} : { id: selected.id, expectedRevision: selected.revision }),
-        kind: selected.kind,
+        kind: system ? 'rule' : selected.kind,
         title: draftTitle,
         content: draftContent,
-        activation: cloneActivation(draftActivation),
+        activation,
         sourceKind: selected.source.kind === 'import' ? 'import' : 'author',
       })
       if (!isProjectSessionCurrent(session)) return
@@ -297,8 +297,36 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     }
   }
 
+  const toggleEnabled = async (entry: WorldbookEntry, enabled: boolean) => {
+    if (isWorldbookSystemEntry(entry) || entry.deletable === false) return
+    const activation = cloneActivation({ ...entry.activation, enabled })
+    if (entry.id === '__new__') {
+      const next = { ...entry, activation }
+      newDraftRef.current = next
+      setEntries(current => current.map(item => item.id === entry.id ? next : item))
+      if (selectedId === entry.id) setDraftActivation(activation)
+      return
+    }
+    if (!session) {
+      toast.error(text('当前作品会话未就绪，请重新打开作品后再保存', 'Project session is not ready. Reopen the project and try again.'))
+      return
+    }
+    try {
+      await saveWorldbookActivation(session, entry.id, activation)
+      if (!isProjectSessionCurrent(session)) return
+      setEntries(current => current.map(item => item.id === entry.id ? { ...item, activation } : item))
+      if (selectedId === entry.id) setDraftActivation(activation)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   const remove = async () => {
     if (!session || selected?.id === '__new__' || !selected) return
+    if (isWorldbookSystemEntry(selected) || selected.deletable === false) {
+      toast.error(text('系统提示不可删除', 'The system prompt cannot be deleted'))
+      return
+    }
     if (!window.confirm(text(`删除「${selected.title}」？`, `Delete “${selected.title}”?`))) return
     try {
       await deleteWorldbookEntry(session, selected.id, selected.revision)
@@ -348,28 +376,6 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
       toast.error(cause instanceof Error ? cause.message : String(cause))
     } finally {
       if (isProjectSessionCurrent(session)) setImporting(false)
-    }
-  }
-
-  const runPreview = async () => {
-    if (!session || !selected) return
-    setPreviewing(true)
-    try {
-      const chapterNumber = Math.max(1, Number(previewChapter) || 1)
-      const result = await resolveWorldbook(session, {
-        stage: previewStage,
-        chapterNumber,
-        chapterTitle: previewContext.split('\n')[0] ?? '',
-        blueprintText: previewContext,
-        authorGuidance: previewContext,
-        budgetTokens: 4_000,
-        forceIncludeIds: [selected.id],
-      })
-      if (isProjectSessionCurrent(session)) setPreview(result)
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      if (isProjectSessionCurrent(session)) setPreviewing(false)
     }
   }
 
@@ -478,6 +484,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
             <option value="all">{text('全部来源', 'All sources')}</option>
             <option value="author">{text('作者新建', 'Authored')}</option>
             <option value="import">{text('从作品导入', 'Imported')}</option>
+            <option value="system">{text('系统内置', 'Built-in system')}</option>
           </select>
           <label className="worldbook-check">
             <input type="checkbox" checked={onlyEnabled} onChange={event => setOnlyEnabled(event.target.checked)} />
@@ -490,7 +497,17 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
         </div>
         <ol className="worldbook-entry-list">
           {filtered.map(entry => (
-            <li key={entry.id}>
+            <li key={entry.id} className="worldbook-entry-item">
+              <label className="worldbook-entry-enabled" title={text('启用条目', 'Enable entry')}>
+                <input
+                  type="checkbox"
+                  checked={entry.activation.enabled}
+                  disabled={isWorldbookSystemEntry(entry) || entry.deletable === false}
+                  aria-label={text(`启用「${entry.title || '未命名条目'}」`, `Enable “${entry.title || 'Untitled entry'}”`)}
+                  onClick={event => event.stopPropagation()}
+                  onChange={event => void toggleEnabled(entry, event.target.checked)}
+                />
+              </label>
               <button
                 type="button"
                 className="worldbook-entry-row"
@@ -502,7 +519,12 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
                 </span>
                 <span className="worldbook-entry-copy">
                   <b>{entry.title || text('未命名条目', 'Untitled entry')}</b>
-                  <small>{text(...KIND_NAMES[entry.kind])} · {entry.activation.enabled ? text('启用', 'On') : text('停用', 'Off')}{entry.needsReview ? text(' · 待核对', ' · Review') : ''}</small>
+                  <small>
+                    {isWorldbookSystemEntry(entry)
+                      ? text('系统提示 · 置顶常驻', 'System prompt · pinned')
+                      : text(...KIND_NAMES[entry.kind])}
+                    {entry.needsReview ? text(' · 待核对', ' · Review') : ''}
+                  </small>
                 </span>
                 {entry.activation.alwaysOn && <span className="worldbook-always" title={text('常驻条目', 'Always on')}><Check size={12} aria-hidden /></span>}
               </button>
@@ -535,7 +557,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
                       <Sparkles size={13} aria-hidden />{splitting ? text('拆条中…', 'Splitting…') : text('AI 拆成条目', 'AI split')}
                     </Button>
                   )}
-                  {selected.id !== '__new__' && (
+                  {selected.id !== '__new__' && selected.deletable !== false && !isWorldbookSystemEntry(selected) && (
                     <Button variant="text" size="sm" onClick={() => void remove()}><Trash2 size={13} aria-hidden />{text('删除', 'Delete')}</Button>
                   )}
                   <Button variant="primary" size="sm" disabled={!dirty || saving} onClick={() => void save()}>
@@ -564,134 +586,36 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
         </div>
 
         {selected && (
-          <aside className="worldbook-trigger" aria-label={text('触发与上下文预览', 'Activation and context preview')}>
+          <aside className="worldbook-trigger" aria-label={text('匹配设置', 'Matching')}>
             <header className="worldbook-trigger-head">
-              <p className="worldbook-eyebrow">{text('激活方式', 'Activation')}</p>
-              <h2>{text('何时进入上下文', 'When this enters context')}</h2>
+              <p className="worldbook-eyebrow">{text('匹配', 'Match')}</p>
+              <h2>{text('何时进入对话', 'When this enters chat')}</h2>
             </header>
             <label className="worldbook-toggle-row">
-              <span><b>{text('启用条目', 'Enabled')}</b><small>{text('关闭后完全不参与匹配。', 'Disabled entries never match.')}</small></span>
-              <input type="checkbox" checked={draftActivation.enabled} onChange={event => setDraftActivation(current => ({ ...current, enabled: event.target.checked }))} />
-            </label>
-            <label className="worldbook-toggle-row">
-              <span><b>{text('常驻', 'Always on')}</b><small>{text('在适用阶段始终进入提示词。', 'Always enters the prompt in applicable stages.')}</small></span>
-              <input type="checkbox" checked={draftActivation.alwaysOn} onChange={event => setDraftActivation(current => ({ ...current, alwaysOn: event.target.checked }))} />
+              <span><b>{text('常驻', 'Always on')}</b><small>{text('不依赖关键词，始终进入提示词。', 'Always enters the prompt without needing keywords.')}</small></span>
+              <input
+                type="checkbox"
+                checked={draftActivation.alwaysOn}
+                disabled={Boolean(selected && (isWorldbookSystemEntry(selected) || selected.deletable === false))}
+                onChange={event => setDraftActivation(current => ({ ...current, alwaysOn: event.target.checked }))}
+              />
             </label>
             <div className="worldbook-field">
-              <label>{text('主关键词', 'Primary keys')}</label>
+              <label>{text('关键词', 'Keywords')}</label>
               <input
                 value={draftActivation.primaryKeys.join('，')}
-                onChange={event => setDraftActivation(current => ({ ...current, primaryKeys: parseKeys(event.target.value) }))}
+                onChange={event => setDraftActivation(current => ({ ...current, primaryKeys: parseKeys(event.target.value), secondaryKeys: [] }))}
                 placeholder={text('灯塔，林岚，潮汐', 'lighthouse, Lin Lan, tide')}
               />
-              <small>{text('用逗号或换行分隔。名称和别名最适合做主关键词。', 'Separate with commas or new lines. Names and aliases work best.')}</small>
+              <small>{text('用逗号或换行分隔。对话里出现这些词时才会带入（常驻除外）。', 'Separate with commas or new lines. Matched when the chat mentions them (unless always on).')}</small>
             </div>
-            <div className="worldbook-field">
-              <label>{text('次关键词', 'Secondary keys')}</label>
-              <input
-                value={draftActivation.secondaryKeys.join('，')}
-                onChange={event => setDraftActivation(current => ({ ...current, secondaryKeys: parseKeys(event.target.value) }))}
-                placeholder={text('只在特定场景使用的词', 'Scene-specific terms')}
-              />
-            </div>
-            <div className="worldbook-grid-2">
-              <label className="worldbook-field">
-                <span>{text('匹配方式', 'Match mode')}</span>
-                <select value={draftActivation.matchMode} onChange={event => setDraftActivation(current => ({ ...current, matchMode: event.target.value as WorldbookActivation['matchMode'] }))}>
-                  <option value="any">{text('任一关键词', 'Any key')}</option>
-                  <option value="all">{text('主次都命中', 'Primary and secondary')}</option>
-                </select>
-              </label>
-              <label className="worldbook-field">
-                <span>{text('提示词内容', 'Prompt content')}</span>
-                <select value={draftActivation.promptPolicy} onChange={event => setDraftActivation(current => ({ ...current, promptPolicy: event.target.value as WorldbookActivation['promptPolicy'] }))}>
-                  <option value="full">{text('完整正文', 'Full')}</option>
-                  <option value="excerpt">{text('摘要/按预算', 'Summary / budgeted')}</option>
-                  <option value="browse-only">{text('只浏览', 'Browse only')}</option>
-                </select>
-              </label>
-            </div>
-            <div className="worldbook-grid-2">
-              <label className="worldbook-field">
-                <span>{text('优先级', 'Priority')}</span>
-                <input type="number" step={1} value={draftActivation.priority} onChange={event => setDraftActivation(current => ({ ...current, priority: Math.trunc(Number(event.target.value)) || 0 }))} />
-              </label>
-              <label className="worldbook-field">
-                <span>{text('插入顺序', 'Order')}</span>
-                <input type="number" step={1} value={draftActivation.insertionOrder} onChange={event => setDraftActivation(current => ({ ...current, insertionOrder: Math.trunc(Number(event.target.value)) || 0 }))} />
-              </label>
-            </div>
-            <div className="worldbook-field">
-              <label>{text('适用阶段', 'Stages')}</label>
-              <div className="worldbook-stage-list">
-                {WORLD_BOOK_STAGES.map(stage => (
-                  <label key={stage}>
-                    <input
-                      type="checkbox"
-                      checked={draftActivation.stages.includes(stage)}
-                      onChange={event => setDraftActivation(current => ({
-                        ...current,
-                        stages: event.target.checked
-                          ? [...current.stages, stage]
-                          : current.stages.filter(item => item !== stage),
-                      }))}
-                    />
-                    {text(...STAGE_NAMES[stage])}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="worldbook-field">
-              <label>{text('分组', 'Group')}</label>
-              <input value={draftActivation.group} onChange={event => setDraftActivation(current => ({ ...current, group: event.target.value }))} />
-            </div>
-
-            <div className="worldbook-preview-box">
-              <div className="worldbook-preview-head">
-                <b>{text('本章预演', 'Chapter preview')}</b>
-                <Button variant="secondary" size="sm" disabled={previewing} onClick={() => void runPreview()}>
-                  <Sparkles size={13} aria-hidden />{previewing ? text('分析中…', 'Resolving…') : text('预演', 'Preview')}
-                </Button>
-              </div>
-              <label className="worldbook-field">
-                <span>{text('写作阶段', 'Writing stage')}</span>
-                <select value={previewStage} onChange={event => setPreviewStage(event.target.value as WorldbookStage)}>
-                  {WORLD_BOOK_STAGES.map(stage => <option key={stage} value={stage}>{text(...STAGE_NAMES[stage])}</option>)}
-                </select>
-              </label>
-              <div className="worldbook-grid-2">
-                <label className="worldbook-field">
-                  <span>{text('当前章', 'Chapter')}</span>
-                  <input type="number" min={1} value={previewChapter} onChange={event => setPreviewChapter(event.target.value)} />
-                </label>
-                <label className="worldbook-field">
-                  <span>{text('预算', 'Budget')}</span>
-                  <input value="约 4000 tokens" readOnly />
-                </label>
-              </div>
-              <label className="worldbook-field">
-                <span>{text('本章上下文', 'Chapter context')}</span>
-                <textarea value={previewContext} onChange={event => setPreviewContext(event.target.value)} placeholder={text('粘贴本章蓝图、标题或作者指导，预演哪些条目会命中。', 'Paste the blueprint, title, or author guidance to preview matching entries.')} />
-              </label>
-              {preview && (
-                <div className="worldbook-preview-result" data-overflow={preview.requiredOverflow || undefined}>
-                  <p>
-                    <b>{text(`${preview.selections.length} 条将进入上下文`, `${preview.selections.length} entries selected`)}</b>
-                    <span>{text(`约 ${preview.tokenEstimate} / ${preview.budgetTokens} tokens`, `~${preview.tokenEstimate} / ${preview.budgetTokens} tokens`)}</span>
-                  </p>
-                  {preview.requiredOverflow && <Notice tone="danger" title={text('常驻或关键词条目超过预算', 'Required entries exceed the budget')}>{text('请停用或缩短必要条目；系统不会静默丢掉它们。', 'Disable or shorten required entries. They are never dropped silently.')}</Notice>}
-                  <ol>
-                    {preview.selections.map(item => <li key={item.entryId}><b>{item.title}</b><span>{item.reason}{item.matchedKeys.length ? ` · ${item.matchedKeys.join('、')}` : ''}</span></li>)}
-                  </ol>
-                  {preview.omitted.length > 0 && (
-                    <details>
-                      <summary>{text(`未进入 ${preview.omitted.length} 条`, `${preview.omitted.length} omitted`)}</summary>
-                      <ul>{preview.omitted.map(item => <li key={`${item.entryId}:${item.reason}`}>{item.title} · {item.reason}</li>)}</ul>
-                    </details>
-                  )}
-                </div>
-              )}
-            </div>
+            <label className="worldbook-field">
+              <span>{text('匹配方式', 'Match mode')}</span>
+              <select value={draftActivation.matchMode} onChange={event => setDraftActivation(current => ({ ...current, matchMode: event.target.value as WorldbookActivation['matchMode'] }))}>
+                <option value="any">{text('命中任一', 'Match any')}</option>
+                <option value="all">{text('命中全部关键词', 'Match all keywords')}</option>
+              </select>
+            </label>
           </aside>
         )}
       </section>

@@ -50,6 +50,16 @@ export type WorldbookSourceKind =
   | 'plot-thread'
   | 'reference'
   | 'import'
+  | 'system'
+
+/** 直连对话系统提示：世界书置顶常驻，不可删除。 */
+export const WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID = 'wb:system:direct-chat'
+export const WORLD_BOOK_SYSTEM_DIRECT_CHAT_SOURCE_KEY = 'direct-chat'
+
+export function isWorldbookSystemEntry(entry: { id: string } | string): boolean {
+  const id = typeof entry === 'string' ? entry : entry.id
+  return id === WORLD_BOOK_SYSTEM_DIRECT_CHAT_ID
+}
 
 export interface WorldbookSource {
   kind: WorldbookSourceKind
@@ -66,6 +76,8 @@ export interface WorldbookEntry {
   activation: WorldbookActivation
   source: WorldbookSource
   editable: boolean
+  /** 系统常驻条目为 false；缺省视为可删。 */
+  deletable?: boolean
   needsReview: boolean
   revision: number
   updatedAt: string
@@ -225,10 +237,15 @@ export function resolveWorldbookEntries(
       omitted.push({ entryId: entry.id, title: entry.title, reason: 'stage' })
       continue
     }
-    const primaryMatched = entry.activation.primaryKeys.filter(key => keyMatches(key, haystack))
-    const secondaryMatched = entry.activation.secondaryKeys.filter(key => keyMatches(key, haystack))
+    const primaryKeys = entry.activation.primaryKeys.map(key => key.trim()).filter(Boolean)
+    const secondaryKeys = entry.activation.secondaryKeys.map(key => key.trim()).filter(Boolean)
+    const primaryMatched = primaryKeys.filter(key => keyMatches(key, haystack))
+    const secondaryMatched = secondaryKeys.filter(key => keyMatches(key, haystack))
+    // all：有次关键词时仍要求主且次；仅主关键词时要求列表里每个词都命中（简化 UI）。
     const keywordMatch = entry.activation.matchMode === 'all'
-      ? primaryMatched.length > 0 && secondaryMatched.length > 0
+      ? secondaryKeys.length > 0
+        ? primaryMatched.length > 0 && secondaryMatched.length > 0
+        : primaryKeys.length > 0 && primaryMatched.length === primaryKeys.length
       : primaryMatched.length > 0 || secondaryMatched.length > 0
     const manual = forced.has(entry.id)
     const semanticScore = semantic.get(entry.id) ?? 0

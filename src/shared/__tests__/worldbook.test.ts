@@ -60,6 +60,17 @@ describe('worldbook resolver', () => {
       .toHaveLength(1)
   })
 
+  it('all-mode with only primary keys requires every primary key', () => {
+    const activation = defaultWorldbookActivation('custom')
+    activation.primaryKeys = ['灯塔', '暴雨']
+    activation.secondaryKeys = []
+    activation.matchMode = 'all'
+    const value = entry('all-primary', '暴雨灯塔', '正文', activation)
+    expect(resolveWorldbookEntries([value], { stage: 'drafting', chapterTitle: '灯塔' }).selections).toEqual([])
+    expect(resolveWorldbookEntries([value], { stage: 'drafting', chapterTitle: '灯塔与暴雨' }).selections)
+      .toHaveLength(1)
+  })
+
   it('reports required overflow instead of silently dropping an always-on entry', () => {
     const activation = defaultWorldbookActivation('rule')
     const result = resolveWorldbookEntries([

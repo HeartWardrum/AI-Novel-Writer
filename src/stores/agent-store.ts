@@ -13,7 +13,17 @@ import {
 import type { ToolArtifact } from '../services/agent/tool-registry'
 import { loadDirectChatContinuity } from '../services/agent/direct-chat-continuity'
 import { buildDirectChatSystemPrompt } from '../services/agent/direct-chat-prompt'
+import { loadDirectChatWorldbook } from '../services/agent/direct-chat-worldbook'
+import {
+  clearAgentChat,
+  deleteAgentConversation,
+  loadAgentChat,
+  setActiveAgentConversation,
+  upsertAgentConversation,
+} from '../services/agent-chat-service'
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
+import type { PersistedAgentConversation, PersistedAgentMessage } from '../shared/agent-chat'
+import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../shared/project-session-context'
 import { resolveWritingLanguage, writingLanguageText } from '../shared/writing-language'
 import { useEditorStore } from './editor-store'
@@ -41,6 +51,7 @@ export interface AgentRequestDebug {
     reasoningStage: string
     creativeStrategy?: string
     historyCount: number
+    worldbookCount?: number
   }
 }
 
@@ -103,8 +114,10 @@ interface AgentState {
   selectConversation: (id: string) => void
   /** 删除指定会话 */
   deleteConversation: (id: string) => void
-  /** 清空所有会话 */
-  clearAll: () => void
+  /** 清空所有会话（可选同步清库） */
+  clearAll: (options?: { persist?: boolean }) => void
+  /** 从当前作品库加载对话 */
+  hydrateFromProject: (session: ProjectSessionContext) => Promise<void>
   /** 切换历史面板 */
   toggleHistory: () => void
   /** 设置历史面板可见性 */
@@ -169,6 +182,81 @@ let activeAbortController: AbortController | null = null
 /** llm-store 流式 requestId，供 cancelGeneration 调用 */
 let activeStreamRequestId: string | null = null
 let activeRequestUiLocale: Locale | null = null
+/** 已 hydrate 的项目会话键；未匹配时禁止落盘，避免写错库。 */
+let hydratedSessionKey: string | null = null
+
+function sessionKey(session: ProjectSessionContext): string {
+  return `${session.projectId}\n${session.leaseId}\n${session.projectPath}`
+}
+
+function currentPersistSession(): ProjectSessionContext | null {
+  const session = projectSessionContextFromProject(useProjectStore.getState().currentProject)
+  if (!session || hydratedSessionKey !== sessionKey(session)) return null
+  return session
+}
+
+function toPersistedConversation(conversation: AgentConversation): PersistedAgentConversation {
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    modelId: conversation.modelId,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    messages: conversation.messages
+      .filter(message => !message.streaming)
+      .map((message): PersistedAgentMessage => {
+        const next: PersistedAgentMessage = {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.createdAt,
+        }
+        if (message.toolCalls) next.toolCalls = message.toolCalls
+        if (message.artifacts) next.artifacts = message.artifacts
+        return next
+      }),
+  }
+}
+
+function fromPersistedConversation(conversation: PersistedAgentConversation): AgentConversation {
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    modelId: conversation.modelId,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    messages: conversation.messages.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+      ...(message.toolCalls ? { toolCalls: message.toolCalls as AgentMessage['toolCalls'] } : {}),
+      ...(message.artifacts ? { artifacts: message.artifacts as AgentMessage['artifacts'] } : {}),
+    })),
+  }
+}
+
+async function persistConversationById(id: string): Promise<void> {
+  const session = currentPersistSession()
+  if (!session) return
+  const conversation = useAgentStore.getState().conversations.find(item => item.id === id)
+  if (!conversation) return
+  try {
+    await upsertAgentConversation(session, toPersistedConversation(conversation))
+  } catch (error) {
+    console.warn('[Agent] 对话落盘失败:', error)
+  }
+}
+
+async function persistActiveMeta(): Promise<void> {
+  const session = currentPersistSession()
+  if (!session) return
+  try {
+    await setActiveAgentConversation(session, useAgentStore.getState().activeConversationId)
+  } catch (error) {
+    console.warn('[Agent] 活跃对话落盘失败:', error)
+  }
+}
 
 // ===== Zustand Store =====
 
@@ -206,11 +294,13 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       activeConversationId: newConv.id,
       showHistory: false,
     }))
+    void persistConversationById(newConv.id).then(() => persistActiveMeta())
     return newConv
   },
 
   selectConversation: (id) => {
     set({ activeConversationId: id, showHistory: false })
+    void persistActiveMeta()
   },
 
   deleteConversation: (id) => {
@@ -221,10 +311,52 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         : state.activeConversationId
       return { conversations: filtered, activeConversationId: nextId }
     })
+    const session = currentPersistSession()
+    if (session) {
+      void deleteAgentConversation(session, id)
+        .then(() => persistActiveMeta())
+        .catch(error => console.warn('[Agent] 删除对话落盘失败:', error))
+    }
   },
 
-  clearAll: () => {
-    set({ conversations: [], activeConversationId: null })
+  clearAll: (options) => {
+    set({ conversations: [], activeConversationId: null, showHistory: false, generating: false, activeRequestId: null })
+    if (options?.persist === false) {
+      hydratedSessionKey = null
+      return
+    }
+    const session = currentPersistSession()
+    if (session) {
+      void clearAgentChat(session).catch(error => console.warn('[Agent] 清空对话落盘失败:', error))
+    }
+  },
+
+  hydrateFromProject: async (session) => {
+    const key = sessionKey(session)
+    hydratedSessionKey = null
+    set({
+      conversations: [],
+      activeConversationId: null,
+      showHistory: false,
+      generating: false,
+      activeRequestId: null,
+    })
+    try {
+      const loaded = await loadAgentChat(session)
+      const project = useProjectStore.getState().currentProject
+      const current = projectSessionContextFromProject(project)
+      if (!current || sessionKey(current) !== key) return
+      hydratedSessionKey = key
+      set({
+        conversations: loaded.conversations.map(fromPersistedConversation),
+        activeConversationId: loaded.activeConversationId,
+      })
+    } catch (error) {
+      console.warn('[Agent] 对话加载失败:', error)
+      const project = useProjectStore.getState().currentProject
+      const current = projectSessionContextFromProject(project)
+      if (current && sessionKey(current) === key) hydratedSessionKey = key
+    }
   },
 
   toggleHistory: () => {
@@ -240,9 +372,10 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     if (!conv) return
     set(state => ({
       conversations: state.conversations.map(c =>
-        c.id === conv.id ? { ...c, modelId } : c
+        c.id === conv.id ? { ...c, modelId, updatedAt: Date.now() } : c
       ),
     }))
+    void persistConversationById(conv.id)
   },
 
   sendMessage: async (content, recoveryHandle) => {
@@ -268,9 +401,10 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
             if (activeConv) {
               set(state => ({
                 conversations: state.conversations.map(c =>
-                  c.id === activeConv.id ? { ...c, messages: [] } : c
+                  c.id === activeConv.id ? { ...c, messages: [], updatedAt: Date.now() } : c
                 ),
               }))
+              void persistConversationById(activeConv.id)
             }
             return
           }
@@ -284,9 +418,12 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
             }
             set(state => ({
               conversations: state.conversations.map(c =>
-                c.id === helpConv.id ? { ...c, messages: [...c.messages, helpMsg] } : c
+                c.id === helpConv.id
+                  ? { ...c, messages: [...c.messages, helpMsg], updatedAt: Date.now() }
+                  : c
               ),
             }))
+            void persistConversationById(helpConv.id).then(() => persistActiveMeta())
             return
           }
           default:
@@ -394,6 +531,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           streaming: false,
         }))
         finishIdle()
+        void persistConversationById(convId).then(() => persistActiveMeta())
         return
       }
 
@@ -416,9 +554,14 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         projectSession,
         chapterNumber: activeChapterNumber,
       })
+      const worldbook = await loadDirectChatWorldbook({
+        projectSession,
+        userText: userMsg.content,
+      })
       const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
         { role: 'system', content: systemPrompt },
         ...(continuityBlock ? [{ role: 'system' as const, content: continuityBlock }] : []),
+        ...(worldbook ? [{ role: 'system' as const, content: worldbook.block }] : []),
         ...historyMessages,
         { role: 'user', content: userMsg.content },
       ]
@@ -435,6 +578,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           reasoningStage,
           ...(creativeStrategy ? { creativeStrategy } : {}),
           historyCount: historyMessages.length,
+          ...(worldbook ? { worldbookCount: worldbook.result.selections.length } : {}),
         },
       }
       updateAssistantMsg(m => ({ ...m, requestDebug }))
@@ -471,6 +615,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
             activeAbortController = null
             activeStreamRequestId = null
             activeRequestUiLocale = null
+            void persistConversationById(convId).then(() => persistActiveMeta())
           },
           onError: () => {
             if (get().activeRequestId !== assistantMsg.id) return
@@ -482,6 +627,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
               streaming: false,
             }))
             finishIdle()
+            void persistConversationById(convId).then(() => persistActiveMeta())
           },
         },
         modelId,
@@ -507,6 +653,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         streaming: false,
       }))
       finishIdle()
+      void persistConversationById(convId).then(() => persistActiveMeta())
     } finally {
       if (activeAbortController === abortController) activeAbortController = null
     }
@@ -535,17 +682,20 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     const streamId = activeStreamRequestId
     activeStreamRequestId = null
 
+    const activeId = get().activeConversationId
     set(state => ({
       generating: false,
       activeRequestId: null,
       conversations: state.conversations.map(c => ({
         ...c,
+        updatedAt: Date.now(),
         messages: c.messages.map(m =>
           m.streaming ? { ...m, streaming: false, content: m.content + stoppedText } : m
         ),
       })),
     }))
     activeRequestUiLocale = null
+    if (activeId) void persistConversationById(activeId).then(() => persistActiveMeta())
 
     if (streamId) {
       try {
