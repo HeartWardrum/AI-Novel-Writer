@@ -64,7 +64,13 @@ import { ConsistencyExemptionRepository } from '../repositories/consistency-exem
 import { NarrativeThreadRepository } from '../repositories/narrative-thread-repository'
 import { PlotTreeRepository } from '../repositories/plot-tree-repository'
 import { RecoveryCandidateRepository } from '../repositories/recovery-candidate-repository'
+import { WorldbookRepository } from '../repositories/worldbook-repository'
 import type { RecoveryCandidateRecordInput } from '../../src/shared/recovery-candidate'
+import type {
+  WorldbookActivation,
+  WorldbookEntrySaveRequest,
+  WorldbookResolveRequest,
+} from '../../src/shared/worldbook'
 
 type ProjectDatabaseHandler = (event: unknown, ...args: never[]) => unknown
 
@@ -123,6 +129,10 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:narrative-thread-event-confirm',
   'db:plot-tree-save',
   'db:plot-tree-clear',
+  'worldbook:save',
+  'worldbook:save-activation',
+  'worldbook:import-sources',
+  'worldbook:delete',
 ])
 
 function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
@@ -158,6 +168,84 @@ export function registerDatabaseController() {
   ipcMain.handle('db:project-core-get', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ProjectCoreRepository.get()
+  })
+
+  ipcMain.handle('worldbook:list', async (
+    _event,
+    options: { includeReferenceContent?: boolean; currentChapter?: number } | undefined,
+    expectedProjectPath: string,
+  ) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return WorldbookRepository.list(expectedProjectPath, options)
+  })
+
+  ipcMain.handle('worldbook:list-sources', async (
+    _event,
+    options: { currentChapter?: number } | undefined,
+    expectedProjectPath: string,
+  ) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return WorldbookRepository.listSources(expectedProjectPath, options)
+  })
+
+  ipcMain.handle('worldbook:import-sources', async (
+    _event,
+    request: { sourceIds: string[]; currentChapter?: number },
+    expectedProjectPath: string,
+  ) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      const entries = await WorldbookRepository.importSources(
+        expectedProjectPath,
+        request.sourceIds,
+        { currentChapter: request.currentChapter },
+      )
+      return { success: true, entries }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('worldbook:save', async (_event, request: WorldbookEntrySaveRequest, expectedProjectPath: string) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      return { success: true, entry: WorldbookRepository.save(request) }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('worldbook:save-activation', async (
+    _event,
+    request: { entryId: string; activation: WorldbookActivation },
+    expectedProjectPath: string,
+  ) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      return { success: true, activation: WorldbookRepository.saveActivation(request) }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('worldbook:delete', async (
+    _event,
+    entryId: string,
+    expectedRevision: number,
+    expectedProjectPath: string,
+  ) => {
+    try {
+      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      WorldbookRepository.delete(entryId, expectedRevision)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('worldbook:resolve', async (_event, request: WorldbookResolveRequest, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return WorldbookRepository.resolve(request, expectedProjectPath)
   })
 
   ipcMain.handle('db:project-core-update', async (

@@ -151,11 +151,11 @@ useProjectStore.subscribe(({ currentProject }, previous) => {
   }
 })
 
-function openKnowledge(): void {
+function openWorldbook(): void {
   const projectKey = useProjectStore.getState().currentProject?.path
   if (!projectKey) return
   const text = useLocaleStore.getState().text
-  useEditorStore.getState().openFile({ id: 'knowledge-base', name: text('知识库', 'Knowledge base'), type: 'knowledge', projectKey })
+  useEditorStore.getState().openFile({ id: 'worldbook', name: text('世界书', 'Worldbook'), type: 'worldbook', projectKey })
 }
 
 /** 正文阶段落到当前该写的那一章；还没有任何章时打开第 1 章单章视图，不强制回蓝图。 */
@@ -223,7 +223,7 @@ function arrive(intent: Exclude<NavigationIntent, { kind: 'settings' }>): void {
       } else openPageTab(intent.stage)
       return
     case 'resource':
-      if (intent.page === 'knowledge') openKnowledge()
+      if (intent.page === 'worldbook') openWorldbook()
       else openPageTab(intent.page)
       return
     case 'run':

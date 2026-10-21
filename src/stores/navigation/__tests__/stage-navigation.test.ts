@@ -37,13 +37,13 @@ function mockEmptyDraftCreate(chapterNumber: number, draftId = 100 + chapterNumb
     createdAt: '2026-10-13 20:00:00',
     updatedAt: '2026-10-13 20:00:00',
   }
-  vi.mocked(ipc.invokeWithProjectSession).mockImplementation(async (_session, channel, ...args) => {
+  vi.mocked(ipc.invokeWithProjectSession).mockImplementation((async (_session: unknown, channel: string, ...args: unknown[]) => {
     if (channel === 'db:draft-next-version') return 1
     if (channel === 'db:draft-create') return { success: true, id: draftId }
     if (channel === 'db:draft-list') return Number(args[0]) === chapterNumber ? [meta] : []
     if (channel === 'db:draft-get-full') return Number(args[0]) === draftId ? { ...meta, content: '' } : null
     throw new Error(`Unexpected channel: ${channel}`)
-  })
+  }) as never)
   return { draftId, filePath: formatResourceUri({ kind: 'draft', id: draftId }) }
 }
 
@@ -79,10 +79,10 @@ describe('新外壳下 navigate 的落点，调用方与旧外壳相同', () => 
     navigate({ kind: 'stage', stage: 'setup' })
     navigate({ kind: 'stage', stage: 'architecture' })
     navigate({ kind: 'resource', page: 'plot' })
-    navigate({ kind: 'resource', page: 'knowledge' })
+    navigate({ kind: 'resource', page: 'worldbook' })
     navigate({ kind: 'resource', page: 'history' })
     navigate({ kind: 'stage', stage: 'setup' })
-    expect(tabTypes()).toEqual(['config', 'world-building', 'narrative-thread', 'knowledge', 'version-history'])
+    expect(tabTypes()).toEqual(['config', 'worldbook', 'narrative-thread', 'version-history'])
     expect(useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)?.type).toBe('config')
     expect(useStageStore.getState().focus).toBe(false)
 

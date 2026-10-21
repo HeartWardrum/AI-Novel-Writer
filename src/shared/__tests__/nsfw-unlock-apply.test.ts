@@ -33,7 +33,7 @@ describe('nsfw unlock apply', () => {
 
   it('unlocks spans sequentially and keeps unmarked text', async () => {
     const soft = `开场。${NSFW_OPEN}软写一${NSFW_CLOSE}中间。${NSFW_OPEN}软写二${NSFW_CLOSE}收束。`
-    const unlock = vi.fn(async (request: { softSpan: string; index: number }) => {
+    const unlock = vi.fn(async (request: { softSpan: string; index: number; preceding: string }) => {
       if (request.index === 0) return '硬写一'
       return '硬写二'
     })

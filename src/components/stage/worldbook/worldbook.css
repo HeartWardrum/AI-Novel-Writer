@@ -1,0 +1,359 @@
+/* 世界书：左栏条目列表，右栏正文与激活配置。只引用纸墨令牌。 */
+.worldbook-page {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.worldbook-col {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.worldbook-list {
+  padding: var(--s-5) var(--s-3);
+  border-right: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 70%, var(--surface-2));
+}
+
+.worldbook-list-head,
+.worldbook-editor-head,
+.worldbook-trigger-head,
+.worldbook-preview-head,
+.worldbook-list-actions,
+.worldbook-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.worldbook-list-head h1,
+.worldbook-trigger-head h2,
+.worldbook-empty-state h2 {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-weight: 560;
+}
+
+.worldbook-list-head h1 { font-size: var(--fs-20); }
+.worldbook-trigger-head h2 { font-size: var(--fs-16); margin-bottom: var(--s-3); }
+.worldbook-eyebrow {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-11);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.worldbook-list-actions { margin: var(--s-4) 0 var(--s-3); justify-content: flex-start; flex-wrap: wrap; }
+.worldbook-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+.worldbook-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.worldbook-filters { display: grid; gap: 7px; margin-top: var(--s-3); }
+.worldbook-filters > label,
+.worldbook-filters > select {
+  min-height: 30px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: inherit;
+}
+.worldbook-filters > label:first-child { display: flex; align-items: center; gap: 6px; padding: 0 7px; }
+.worldbook-filters select { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 6px; }
+.worldbook-check { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: var(--fs-12); }
+.worldbook-list-meta { color: var(--ink-3); font-size: var(--fs-11); margin: var(--s-3) 2px 6px; }
+.worldbook-entry-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.worldbook-entry-row {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: inherit;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.worldbook-entry-row:hover { background: var(--sunken); }
+.worldbook-entry-row[aria-current="true"] { background: var(--paper); box-shadow: 0 0 0 1px var(--rule-strong); }
+.worldbook-entry-icon { width: 27px; height: 27px; border-radius: var(--radius); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.worldbook-entry-copy { min-width: 0; display: grid; gap: 2px; flex: 1; }
+.worldbook-entry-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-13); font-weight: 600; }
+.worldbook-entry-copy small { color: var(--ink-3); font-size: 10.5px; }
+.worldbook-always { color: var(--ok); flex: none; }
+.worldbook-empty, .worldbook-empty-state { color: var(--ink-3); font-size: var(--fs-12); line-height: 1.6; }
+
+.worldbook-detail {
+  padding: var(--s-6) var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  background: var(--paper);
+}
+
+.worldbook-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 0 auto;
+}
+
+.worldbook-editor-meta,
+.worldbook-editor-actions,
+.worldbook-content-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.worldbook-editor-meta { color: var(--ink-3); font-size: var(--fs-11); }
+.worldbook-kind-chip,
+.worldbook-review-chip {
+  border-radius: var(--radius-pill);
+  padding: 2px 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.worldbook-review-chip { background: var(--warn-soft); color: var(--warn); }
+.worldbook-title-input {
+  width: 100%;
+  margin: var(--s-5) 0 var(--s-3);
+  padding: 0 0 var(--s-3);
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 560;
+  outline: 0;
+}
+.worldbook-content-frame {
+  min-height: 280px;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.worldbook-content-tabs {
+  justify-content: space-between;
+  padding: 8px 11px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 10.5px;
+}
+.worldbook-content-input {
+  flex: 1;
+  min-height: 280px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  padding: var(--s-5);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1.85;
+}
+.worldbook-content-frame[data-readonly] { background: color-mix(in srgb, var(--surface) 65%, transparent); }
+.worldbook-derived { margin-top: var(--s-3); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: 9px 11px; }
+.worldbook-derived summary { cursor: pointer; font-size: var(--fs-12); font-weight: 600; }
+.worldbook-derived pre { white-space: pre-wrap; font: inherit; font-size: var(--fs-12); line-height: 1.65; color: var(--ink-3); }
+.worldbook-empty-state { margin: auto; max-width: 520px; text-align: center; }
+.worldbook-empty-state h2 { font-size: var(--fs-24); }
+.worldbook-empty-state p { line-height: 1.7; }
+
+.worldbook-trigger {
+  flex: none;
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--rule-strong);
+}
+.worldbook-toggle-row,
+.worldbook-field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: var(--s-3);
+  font-size: 11.5px;
+}
+.worldbook-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  align-items: center;
+  border-bottom: 1px solid var(--rule);
+  padding: 9px 0;
+}
+.worldbook-toggle-row span { display: grid; gap: 2px; }
+.worldbook-toggle-row small,
+.worldbook-field small { color: var(--ink-3); font-size: 10.5px; line-height: 1.45; }
+.worldbook-field > label,
+.worldbook-field > span { font-weight: 600; }
+.worldbook-field input,
+.worldbook-field select,
+.worldbook-field textarea {
+  width: 100%;
+  min-height: 31px;
+  box-sizing: border-box;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  padding: 6px 8px;
+}
+.worldbook-field textarea { min-height: 76px; resize: vertical; }
+.worldbook-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); max-width: 520px; }
+.worldbook-stage-list { display: flex; flex-wrap: wrap; gap: 5px 10px; }
+.worldbook-stage-list label { display: flex; align-items: center; gap: 4px; font-weight: 400; }
+.worldbook-preview-box { margin-top: var(--s-5); padding-top: var(--s-4); border-top: 1px solid var(--rule-strong); }
+.worldbook-preview-head { margin-bottom: var(--s-3); }
+.worldbook-preview-result {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: 9px;
+  background: var(--surface);
+}
+.worldbook-preview-result[data-overflow] { border-color: var(--danger); }
+.worldbook-preview-result > p { display: grid; gap: 2px; margin: 0 0 8px; font-size: var(--fs-11); }
+.worldbook-preview-result > p span { color: var(--ink-3); }
+.worldbook-preview-result ol,
+.worldbook-preview-result ul { margin: 0; padding-left: 18px; font-size: var(--fs-11); line-height: 1.55; }
+.worldbook-preview-result li span { color: var(--ink-3); margin-left: 4px; }
+.worldbook-preview-result details { margin-top: 8px; font-size: 10.5px; }
+
+.worldbook-split-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-scrim);
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  background: var(--scrim);
+}
+
+.worldbook-split-dialog {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-panel);
+  background: var(--paper);
+  box-shadow: var(--shadow-dialog);
+  padding: var(--s-5);
+}
+
+.worldbook-split-dialog > header,
+.worldbook-split-dialog > footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.worldbook-split-dialog h2 {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-20);
+}
+
+.worldbook-split-help {
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+}
+
+.worldbook-split-list {
+  min-height: 0;
+  overflow: auto;
+  list-style: none;
+  display: grid;
+  gap: 9px;
+  margin: 8px 0 var(--s-4);
+  padding: 0 4px 0 0;
+}
+
+.worldbook-split-list > li {
+  display: grid;
+  gap: 6px;
+  padding: var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  opacity: .62;
+}
+
+.worldbook-split-list > li[data-selected] {
+  opacity: 1;
+  border-color: var(--accent-line);
+}
+
+.worldbook-split-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-11);
+  color: var(--ink-3);
+}
+
+.worldbook-split-list input,
+.worldbook-split-list textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 7px 8px;
+}
+
+.worldbook-split-list textarea {
+  min-height: 70px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.worldbook-split-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+.worldbook-split-dialog > footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--rule);
+  padding-top: var(--s-3);
+}
+
+.worldbook-split-dialog > footer span {
+  margin-right: auto;
+  color: var(--ink-3);
+  font-size: var(--fs-11);
+}
+
+@media (max-width: 720px) {
+  .worldbook-page { grid-template-columns: 1fr; }
+  .worldbook-list { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  .worldbook-detail { padding: var(--s-5); }
+  .worldbook-grid-2 { max-width: none; }
+}

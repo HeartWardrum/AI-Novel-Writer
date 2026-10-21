@@ -28,7 +28,7 @@ export const CHAPTER_RUNNING_TEXT: [string, string] = ['生成中', 'Writing']
 
 export const RESOURCE_NAMES: Record<ResourcePage, [string, string]> = {
   plot: ['剧情与伏笔', 'Plot & threads'],
-  knowledge: ['知识库', 'Knowledge base'],
+  worldbook: ['世界书', 'Worldbook'],
   history: ['版本历史', 'Version history'],
 }
 
@@ -36,10 +36,11 @@ export const RESOURCE_NAMES: Record<ResourcePage, [string, string]> = {
 const PAGE_TAB_NAMES: Partial<Record<EditorTab['type'], [string, string]>> = {
   config: STAGE_NAMES.setup,
   'world-building': STAGE_NAMES.architecture,
+  worldbook: RESOURCE_NAMES.worldbook,
   character: ['角色名单', 'Cast'],
   'chapter-card': STAGE_NAMES.blueprint,
   'narrative-thread': RESOURCE_NAMES.plot,
-  knowledge: RESOURCE_NAMES.knowledge,
+  knowledge: RESOURCE_NAMES.worldbook,
   'version-history': RESOURCE_NAMES.history,
 }
 

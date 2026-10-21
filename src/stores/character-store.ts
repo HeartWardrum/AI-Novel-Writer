@@ -189,7 +189,9 @@ interface SessionOperation<T> {
   kind: 'save' | 'rename' | 'delete'
 }
 
-let characterSaveInFlight: SessionOperation<void> | null = null
+type CharacterSaveResult = { created: { selectionKey: string; characterId: string }[] }
+
+let characterSaveInFlight: SessionOperation<CharacterSaveResult> | null = null
 let characterIdentityMutationInFlight: SessionOperation<unknown> | null = null
 let characterLoadSequence = 0
 
@@ -779,10 +781,10 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       originalName: rename.originalName,
       newName: rename.newName.trim(),
     }))
-    const saveKind: SessionOperation<void>['kind'] = operationKind
+    const saveKind: SessionOperation<CharacterSaveResult>['kind'] = operationKind
       ?? (savedRenames.length > 0 ? 'rename' : 'save')
 
-    const save = async (): Promise<{ created: { selectionKey: string; characterId: string }[] }> => {
+    const save = async (): Promise<CharacterSaveResult> => {
       // 角色主键改名、删除、蓝图结构化引用、角色图谱、revision 和 receipt
       // 都由主进程 roster seam 在同一事务内完成。
       const payload = {

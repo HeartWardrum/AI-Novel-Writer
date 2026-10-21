@@ -22,6 +22,8 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import { useStageStore } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
+import { resolveWorldbook } from '../../../services/worldbook-service'
+import type { WorldbookResolveResult } from '../../../shared/worldbook'
 import { Check } from '../../ui/Check'
 import { useAnchoredLayer } from '../../ui/use-anchored-layer'
 import SplitAction from './SplitAction'
@@ -56,6 +58,7 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
   const [softMarkersTouched, setSoftMarkersTouched] = useState(false)
   const [preflight, setPreflight] = useState<ConsistencyPreflightResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [worldbookPreview, setWorldbookPreview] = useState<WorldbookResolveResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [starting, setStarting] = useState(false)
   const modelFieldId = useId()
@@ -91,6 +94,32 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
       }
     }).catch(() => undefined)
   }, [open, models, defaultModelId])
+
+  useEffect(() => {
+    if (!open) return
+    const session = captureProjectSession(useProjectStore.getState().currentProject)
+    if (!session) return
+    let active = true
+    const timer = setTimeout(() => {
+      void resolveWorldbook(session, {
+        stage: 'drafting',
+        chapterNumber,
+        chapterTitle: blueprint.title,
+        blueprintText: [blueprint.purpose, blueprint.keyEvents].filter(Boolean).join('\n'),
+        characters: blueprint.characters.split(/[、,，\s]+/u).filter(Boolean),
+        authorGuidance: userGuidance,
+        budgetTokens: 4_000,
+      }).then(result => {
+        if (active && isProjectSessionCurrent(session)) setWorldbookPreview(result)
+      }).catch(() => {
+        if (active && isProjectSessionCurrent(session)) setWorldbookPreview(null)
+      })
+    }, 250)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [open, chapterNumber, blueprint.title, blueprint.purpose, blueprint.keyEvents, blueprint.characters, userGuidance])
 
   /** expected 是发起时的那次打开：保存安排后接着开写时，作品已换就不写，蓝图与章号属于原来那部。 */
   const start = async (ignoreFindingsOnce: boolean, expected?: ProjectSessionContext) => {
@@ -259,6 +288,26 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           />
         </div>
       </details>
+      {worldbookPreview && (
+        <details className="stage-write-more" open={worldbookPreview.requiredOverflow}>
+          <summary>
+            <ChevronRight size={14} aria-hidden />
+            {text(`世界书将带入 ${worldbookPreview.selections.length} 条`, `Worldbook brings ${worldbookPreview.selections.length} entries`)}
+            <small>{text(`约 ${worldbookPreview.tokenEstimate} tokens`, `~${worldbookPreview.tokenEstimate} tokens`)}</small>
+          </summary>
+          {worldbookPreview.requiredOverflow && (
+            <p className="stage-write-error" role="alert">{text('常驻或关键词命中的条目超过预算，开写会被阻止。请回世界书停用或缩短条目。', 'Required worldbook entries exceed the budget, so writing will be blocked. Disable or shorten them in the worldbook.')}</p>
+          )}
+          <ul className="stage-worldbook-pick-list">
+            {worldbookPreview.selections.slice(0, 8).map(item => (
+              <li key={item.entryId}><b>{item.title}</b><span>{item.reason}{item.matchedKeys.length ? ` · ${item.matchedKeys.join('、')}` : ''}</span></li>
+            ))}
+          </ul>
+          {worldbookPreview.omitted.length > 0 && (
+            <p className="stage-write-hint">{text(`另有 ${worldbookPreview.omitted.length} 条因预算、阶段或停用未带入。`, `${worldbookPreview.omitted.length} more were omitted by budget, stage, or disabled state.`)}</p>
+          )}
+        </details>
+      )}
       {showPreflight && (
         <WritePreflight
           preflight={preflight}

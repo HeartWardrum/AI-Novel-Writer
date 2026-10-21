@@ -1,19 +1,17 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { BookOpen, GitBranch, Library, Map, Settings, Users, type LucideIcon } from 'lucide-react'
+import { BookOpen, BookMarked, GitBranch, Settings, type LucideIcon } from 'lucide-react'
 import { chapterLabel } from '../../shared/chapter-label'
 import { useLocaleStore } from '../../stores/locale-store'
 import type { ResourcePage, WorkStage } from '../../stores/navigation/navigation-intents'
 import type { ChapterRow, StageLocation, StageStatus } from '../../stores/navigation/stage-progress'
-import { openBuiltinEditor } from '../../stores/open-builtin-editor'
-import { leaveSettingsThen } from '../settings/unsaved-settings'
-import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES, STAGE_NAMES } from './stage-text'
+import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES } from './stage-text'
 import { StageMark } from './StageSpine'
 
 type Text = (zh: string, en: string) => string
 
 const RESOURCE_ICONS: Record<ResourcePage, LucideIcon> = {
   plot: GitBranch,
-  knowledge: Library,
+  worldbook: BookMarked,
   history: BookOpen,
 }
 
@@ -96,29 +94,17 @@ export default function MaterialsRail({
 
       <div className="stage-spine-label stage-spine-label--resources">{text('设定', 'Settings & lore')}</div>
       <ul className="stage-stages">
-        {row('characters', location?.kind === 'stage' && location.stage === 'architecture',
-          () => leaveSettingsThen(() => openBuiltinEditor('character-editor', text('人物', 'Cast'), 'character')),
+        {row('worldbook', location?.kind === 'resource' && location.page === 'worldbook',
+          () => onResource('worldbook'),
           <>
-            <Users size={15} strokeWidth={1.6} aria-hidden="true" />
-            <span className="stage-row-label">{text('人物', 'Cast')}</span>
-          </>)}
-        {row('world', false,
-          () => onStage('architecture'),
-          <>
-            <Map size={15} strokeWidth={1.6} aria-hidden="true" />
-            <span className="stage-row-label">{text('背景与架构', 'World & architecture')}</span>
-          </>)}
-        {row('setup', location?.kind === 'stage' && location.stage === 'setup',
-          () => onStage('setup'),
-          <>
-            <Settings size={15} strokeWidth={1.6} aria-hidden="true" />
-            <span className="stage-row-label">{text(...STAGE_NAMES.setup)}</span>
+            <BookMarked size={15} strokeWidth={1.6} aria-hidden="true" />
+            <span className="stage-row-label">{text('世界书', 'Worldbook')}</span>
           </>)}
       </ul>
 
       <div className="stage-spine-label stage-spine-label--resources">{text('资料', 'Reference')}</div>
       <ul className="stage-resources">
-        {(Object.keys(RESOURCE_NAMES) as ResourcePage[]).map(page => {
+        {(['plot', 'history'] as ResourcePage[]).map(page => {
           const Icon = RESOURCE_ICONS[page]
           return row(`resource-${page}`, location?.kind === 'resource' && location.page === page,
             () => onResource(page),

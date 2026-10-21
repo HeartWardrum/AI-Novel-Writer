@@ -53,6 +53,14 @@ import type {
 } from './narrative-thread'
 import type { PlotTreeSnapshot, PlotTreeSourceBundle } from './plot-tree'
 import type {
+  WorldbookActivation,
+  WorldbookEntry,
+  WorldbookEntrySaveRequest,
+  WorldbookResolveRequest,
+  WorldbookResolveResult,
+  WorldbookSourceCandidate,
+} from './worldbook'
+import type {
   UpdateActionResponse,
   UpdateCheckResponse,
   UpdatePreferences,
@@ -1286,6 +1294,37 @@ export interface KnowledgeBaseChannels {
   'kb:backfill-vectors': { args: [expectedProjectPath: string]; return: { success: boolean; processed: number; failed: number; error?: string; errorCode?: AppErrorCode } }
 }
 
+export interface WorldbookChannels {
+  'worldbook:list': {
+    args: [request: { includeReferenceContent?: boolean; currentChapter?: number } | undefined, expectedProjectPath: string]
+    return: WorldbookEntry[]
+  }
+  'worldbook:list-sources': {
+    args: [request: { currentChapter?: number } | undefined, expectedProjectPath: string]
+    return: WorldbookSourceCandidate[]
+  }
+  'worldbook:import-sources': {
+    args: [request: { sourceIds: string[]; currentChapter?: number }, expectedProjectPath: string]
+    return: { success: boolean; entries?: WorldbookEntry[]; error?: string }
+  }
+  'worldbook:save': {
+    args: [request: WorldbookEntrySaveRequest, expectedProjectPath: string]
+    return: { success: boolean; entry?: WorldbookEntry; error?: string }
+  }
+  'worldbook:save-activation': {
+    args: [request: { entryId: string; activation: WorldbookActivation }, expectedProjectPath: string]
+    return: { success: boolean; activation?: WorldbookActivation; error?: string }
+  }
+  'worldbook:delete': {
+    args: [entryId: string, expectedRevision: number, expectedProjectPath: string]
+    return: { success: boolean; error?: string }
+  }
+  'worldbook:resolve': {
+    args: [request: WorldbookResolveRequest, expectedProjectPath: string]
+    return: WorldbookResolveResult
+  }
+}
+
   // ===== 导入小说 =====
 export interface ImportChannels {
   'dialog:select-novel-files': {
@@ -1374,7 +1413,7 @@ export interface MCPChannels {
 }
 
 // ===== 合并所有频道 =====
-export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
+export type AllInvokeChannels = LegacyRosterGenerationChannels & CharacterAvatarChannels & CharacterPortraitChannels & CharacterPresetProjectChannels & CloudBackupChannels & GraphGenerationChannels & BlueprintNextOptionsChannels & FinalizationGenerationChannels & EditorInlineGenerationChannels & ImportGenerationChannels & AgentGenerationChannels & ReviewRevisionGenerationInvokeChannels & FinalizedCharacterGenerationChannels & CharacterProposalChannels & GenerationOwnerChannels & StartupChannels & WindowChannels & OfficialHomepageChannels & ModelProviderResourceChannels & ConfigChannels & UpdateChannels & ProjectChannels & FileChannels & AppDataChannels & LLMChannels & DatabaseChannels & KnowledgeBaseChannels & WorldbookChannels & ChapterLifecycleChannels & ImportChannels & MCPChannels
 export type AllEventChannels = GenerationOwnerEvents & LLMStreamEvents & UpdateStateEvents & WindowEvents
 
 /** 提取 invoke 频道名 */

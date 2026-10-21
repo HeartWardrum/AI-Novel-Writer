@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { Check, CircleDashed, GitBranch, History, Library, Settings, type LucideIcon } from 'lucide-react'
+import { BookMarked, Check, CircleDashed, GitBranch, History, Settings, type LucideIcon } from 'lucide-react'
 import { useLocaleStore } from '../../stores/locale-store'
 import type { ResourcePage, WorkStage } from '../../stores/navigation/navigation-intents'
 import { chapterLabel } from '../../shared/chapter-label'
@@ -10,7 +10,7 @@ import { pluralEn } from '../../shared/plural-en'
 
 type Text = (zh: string, en: string) => string
 
-const RESOURCE_ICONS: Record<ResourcePage, LucideIcon> = { plot: GitBranch, knowledge: Library, history: History }
+const RESOURCE_ICONS: Record<ResourcePage, LucideIcon> = { plot: GitBranch, worldbook: BookMarked, history: History }
 
 /** 未开始时说明这一步做什么，开始后给出进度。 */
 function stageMeta(status: StageStatus, text: Text): string {

@@ -197,7 +197,7 @@ describe('direct chat sendMessage', () => {
       tabs: [{ id: 'tab-ch2', name: '第 2 章', type: 'chapter', projectKey: project.path, chapterNumber: 2, content: '' }],
       activeTabId: 'tab-ch2',
     })
-    invokeWithProjectSession.mockImplementation(async (_session, channel) => {
+    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string) => {
       if (channel === 'db:continuity-list-before') {
         return [{
           draftId: 1,
@@ -207,7 +207,7 @@ describe('direct chat sendMessage', () => {
         }]
       }
       return []
-    })
+    }) as never)
     const generateStream = vi.fn(async (_messages, callbacks) => {
       callbacks.onDone?.('接上')
       return 'stream-req-7'

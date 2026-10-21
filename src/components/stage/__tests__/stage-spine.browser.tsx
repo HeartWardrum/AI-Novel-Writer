@@ -9,7 +9,6 @@ import type { DraftMeta } from '../../../services/draft-index'
 import {
   deriveChapters, deriveStages, focusChapter, landingStage, type WorkFacts,
 } from '../../../stores/navigation/stage-progress'
-import { useLocaleStore } from '../../../stores/locale-store'
 import StageSpine from '../StageSpine'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -233,8 +232,8 @@ describe('流程脊', () => {
     const container = await mount({ kind: 'stage', stage: 'manuscript', chapter: 3 }, spy)
     await act(async () => stageRows(container)[1].click())
     await act(async () => container.querySelectorAll<HTMLButtonElement>('[aria-label="章节"] button')[3].click())
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-resource="knowledge"]')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-resource="worldbook"]')!.click())
     await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '设置')!.click())
-    expect(spy.mock.calls).toEqual([['stage', 'architecture'], ['chapter', 4], ['resource', 'knowledge'], ['settings']])
+    expect(spy.mock.calls).toEqual([['stage', 'architecture'], ['chapter', 4], ['resource', 'worldbook'], ['settings']])
   })
 })

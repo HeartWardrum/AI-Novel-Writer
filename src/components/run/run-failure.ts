@@ -26,6 +26,8 @@ import { useLLMStore } from '../../stores/llm-store'
 import { createRefineOnlyWorkflow } from '../../services/workflows/chapter-workflow'
 import { ipc } from '../../services/ipc-client'
 import { isProjectSessionCurrent } from '../project-session-gate'
+import { formatResourceUri } from '../../shared/project-paths'
+import type { DraftStatus } from '../../shared/draft-status'
 
 /** 运行侧页为一次失败的运行显示的内容：标题、原因、错误码，以及能接着做什么。 */
 export interface RunFailure {
@@ -178,13 +180,13 @@ export function useRetryWithModel(run: WorkflowRun) {
           projectPath: session.projectPath,
           chapterNumber,
           chapterTitle: latest.chapterTitle ?? `第 ${chapterNumber} 章`,
-          draftPath: latest.filePath,
+          draftPath: formatResourceUri({ kind: 'draft', id: latest.id }),
           draftContent: body,
           sourceDraft: {
             id: latest.id,
             chapterNumber,
             version: latest.version,
-            status: latest.status,
+            status: latest.status as DraftStatus,
             contentRevision: 0,
           },
           generationModelId: modelId,

@@ -197,6 +197,7 @@ export type StageLocation =
 const TAB_LOCATION: Record<EditorTab['type'], StageLocation> = {
   config: { kind: 'stage', stage: 'setup' },
   'world-building': { kind: 'stage', stage: 'architecture' },
+  worldbook: { kind: 'resource', page: 'worldbook' },
   'arch-file': { kind: 'stage', stage: 'architecture' },
   character: { kind: 'stage', stage: 'architecture' },
   outline: { kind: 'stage', stage: 'architecture' },
@@ -205,7 +206,7 @@ const TAB_LOCATION: Record<EditorTab['type'], StageLocation> = {
   'review-report': { kind: 'stage', stage: 'manuscript' },
   diff: { kind: 'stage', stage: 'manuscript' },
   'narrative-thread': { kind: 'resource', page: 'plot' },
-  knowledge: { kind: 'resource', page: 'knowledge' },
+  knowledge: { kind: 'resource', page: 'worldbook' },
   'version-history': { kind: 'resource', page: 'history' },
 }
 

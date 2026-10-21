@@ -104,7 +104,7 @@ describe('NsfwUnlockCommand', () => {
     const result = await cmd.execute({ step: {}, context: makeContext(), callbacks })
     expect(result).toBe('前文。硬写替换后文。')
     expect(callbacks.replaceText).toHaveBeenCalledWith('前文。硬写替换后文。')
-    const invoke = window.aiNovelAPI.invoke as ReturnType<typeof vi.fn>
+    const invoke = window.aiNovelAPI?.invoke as ReturnType<typeof vi.fn>
     expect(invoke.mock.calls.some(([channel]) => channel === 'db:draft-create')).toBe(true)
   })
 

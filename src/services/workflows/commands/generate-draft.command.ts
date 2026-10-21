@@ -63,6 +63,8 @@ import {
   type SelectedCandidateDraft,
 } from '../chapter-materials'
 import type { DraftSourceDependency } from '../../../shared/draft-source-dependency'
+import { resolveWorldbook } from '../../worldbook-service'
+import { estimateWorldbookTokens, type WorldbookResolveResult } from '../../../shared/worldbook'
 
 export { countDraftUnits } from '../../../shared/draft-units'
 export { previousChapterEnding } from '../chapter-materials'
@@ -270,8 +272,8 @@ function toWriterChapterInfo(chapterInfo: ChapterInfo): WriterChapterInfo {
     purpose: chapterInfo.purpose,
     characters: chapterInfo.characters,
     keyEvents: chapterInfo.keyEvents,
-    suspenseHook: chapterInfo.suspenseHook,
-    userGuidance: chapterInfo.userGuidance,
+    ...(chapterInfo.suspenseHook?.trim() ? { suspenseHook: chapterInfo.suspenseHook } : {}),
+    ...(chapterInfo.userGuidance?.trim() ? { userGuidance: chapterInfo.userGuidance } : {}),
   }
 }
 
@@ -572,9 +574,36 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     const knowledgeQueryHint = this.chapterInfo.knowledgeQueryHint?.trim() ?? ''
     const searchQuery = [knowledgeQueryHint, writerChapterInfo.title, writerChapterInfo.keyEvents,
       writerChapterInfo.characters.join(' ')].filter(Boolean).join(' ')
+    let worldbook: WorldbookResolveResult | null = null
+    try {
+      worldbook = await resolveWorldbook(projectSession, {
+        stage: 'drafting',
+        chapterNumber: this.chapterInfo.chapterNumber,
+        chapterTitle: writerChapterInfo.title,
+        blueprintText: [
+          writerChapterInfo.purpose,
+          writerChapterInfo.keyEvents,
+          writerChapterInfo.userGuidance,
+        ].filter(Boolean).join('\n'),
+        characters: writerChapterInfo.characters,
+        authorGuidance: writerChapterInfo.userGuidance,
+        budgetTokens: 4_000,
+      })
+      callbacks.log(uiText(
+        `  世界书已选择 ${worldbook.selections.length} 条，约 ${worldbook.tokenEstimate} tokens`,
+        `  Worldbook selected ${worldbook.selections.length} entries (~${worldbook.tokenEstimate} tokens)`,
+      ))
+    } catch {
+      callbacks.log(uiText('  世界书暂不可用，继续使用既有材料链路', 'Worldbook unavailable; continuing with existing material sources'))
+    }
+    if (worldbook?.requiredOverflow) throw new Error(uiText(
+      '常驻或关键词命中的世界书条目超过本章上下文预算。请停用或缩短这些条目后重试。',
+      'Always-on or keyword-matched worldbook entries exceed this chapter context budget. Disable or shorten them and try again.',
+    ))
     const authorInputs = [{ id: 'draft:chapter-info', text: JSON.stringify(writerChapterInfo) },
       { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
-      { id: 'draft:target-units', text: String(targetChars) }]
+      { id: 'draft:target-units', text: String(targetChars) },
+      ...(worldbook ? [{ id: 'draft:worldbook-selection', text: JSON.stringify(worldbook) }] : [])]
     const earlyRecovery = defaultMain && this.resumeHandle
       ? await ipc.invokeWithProjectSession(projectSession, 'generation:read-context', { handle: this.resumeHandle }) : null
     if (earlyRecovery?.draftSave.kind === 'changed') throw new Error('GENERATION_DRAFT_RECEIPT_INVALID')
@@ -685,6 +714,21 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     )
     const novelConfigFactsJson = JSON.stringify(novelConfigFacts, null, 2)
     let knowledgeReferences: ChapterMaterialReference[] = []
+    const worldbookReferences: ChapterMaterialReference[] = (worldbook?.selections ?? []).map((selection, index) => ({
+      text: selection.content,
+      rendered: promptLanguageText(
+        writingLanguage,
+        `【世界书 ${index + 1}｜${selection.title}｜来源 ${selection.source.kind}:${selection.source.id}｜约 ${selection.estimatedTokens} tokens】\n${selection.content}`,
+        `[Worldbook ${index + 1} | ${selection.title} | Source ${selection.source.kind}:${selection.source.id} | ~${selection.estimatedTokens} tokens]\n${selection.content}`,
+      ),
+      deduplicateAgainstFinalized: true,
+    }))
+    if (worldbookReferences.length > 0) {
+      callbacks.log(uiText(
+        `  世界书材料预计 ${worldbookReferences.reduce((sum, item) => sum + estimateWorldbookTokens(item.text), 0)} tokens`,
+        `  Estimated worldbook material: ${worldbookReferences.reduce((sum, item) => sum + estimateWorldbookTokens(item.text), 0)} tokens`,
+      ))
+    }
     try {
       callbacks.log(uiText(
         '  检索知识库相关片段...',
@@ -807,6 +851,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         characterProfiles,
         futurePlans: futureBlueprintsStr,
         references: [
+          ...worldbookReferences,
           ...(activeThreadContext ? [{ text: activeThreadContext, rendered: activeThreadContext }] : []),
           ...knowledgeReferences,
         ],
@@ -958,8 +1003,11 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             { id: 'draft:author-config', text: JSON.stringify(novelConfig) },
             { id: 'draft:target-units', text: String(targetChars) }]
           const recoveredAuthorInputs = recovery?.authorInputs
-          if (recoveredAuthorInputs && expectedInputs.some(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text))
-            throw new Error('GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED')
+          const changedAuthorInputs = recoveredAuthorInputs
+            ? expectedInputs.filter(input => recoveredAuthorInputs.find(item => item.id === input.id)?.text !== input.text).map(input => input.id)
+            : []
+          if (changedAuthorInputs.length)
+            throw new Error(`GENERATION_DRAFT_RECOVERY_AUTHOR_INPUT_CHANGED:${changedAuthorInputs.join(',')}`)
           const sameIds = (a: readonly number[], b: readonly number[]) => JSON.stringify([...new Set(a)].sort((a, b) => a - b)) === JSON.stringify([...new Set(b)].sort((a, b) => a - b))
           if (recovery && (!sameIds(recovery.selectedDraftIds, selectedCandidateDrafts.map(item => item.draftId))
             || !sameIds(recovery.selectedFinalizedDraftIds, chapterMaterials.consumedFinalizedSources.map(item => item.draftId))

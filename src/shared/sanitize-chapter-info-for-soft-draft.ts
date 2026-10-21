@@ -38,12 +38,10 @@ function softenText(value: string): string {
 export function sanitizeChapterInfoForSoftDraft<T extends SoftDraftChapterInfo>(
   chapterInfo: T,
 ): T {
-  return {
-    ...chapterInfo,
-    keyEvents: softenText(chapterInfo.keyEvents),
-    suspenseHook: softenText(chapterInfo.suspenseHook ?? ''),
-    userGuidance: softenText(chapterInfo.userGuidance ?? ''),
-  }
+  const result = { ...chapterInfo, keyEvents: softenText(chapterInfo.keyEvents) }
+  if (chapterInfo.suspenseHook !== undefined) result.suspenseHook = softenText(chapterInfo.suspenseHook)
+  if (chapterInfo.userGuidance !== undefined) result.userGuidance = softenText(chapterInfo.userGuidance)
+  return result
 }
 
 /** Compact scale notes for the unlock model (original wording). */

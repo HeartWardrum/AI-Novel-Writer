@@ -254,7 +254,12 @@ describe('写作此章弹层', () => {
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
     await expect.element(popover).toBeVisible()
     const labels = [...popover.element().querySelectorAll('label')].map(label => label.textContent)
-    expect(labels).toEqual(['本次模型 只用于这一次', '作者微操指导 可选', '知识库检索关键词 可选'])
+    expect(labels).toEqual([
+      '本次模型 只用于这一次',
+      '软写打标（稍后可 NSFW 化）',
+      '作者微操指导 可选',
+      '知识库检索关键词 可选',
+    ])
     expect(popover.element().querySelector('details')?.open).toBe(false)
     expect(popover.element().textContent).not.toMatch(/章节号|目标字数|章节定位|出场角色|关键事件/)
   })

@@ -18,6 +18,7 @@ import StageLibrary from './library/StageLibrary'
 import { SettingsPage, SetupPage } from './stage-pages'
 import StageHistory from './history/StageHistory'
 import StageKnowledge from './knowledge/StageKnowledge'
+import StageWorldbook from './worldbook/StageWorldbook'
 import StagePlot from './plot/StagePlot'
 import StageTabMenu, { CloseTabsConfirm } from './StageTabMenu'
 import StageTabs from './StageTabs'
@@ -36,6 +37,7 @@ function TabContent({ tab, project }: { tab: EditorTab; project: ProjectData }) 
   const sameProject = sameProjectPathKey(tab.projectKey, project.path)
   if (tab.type === 'config' && tab.projectKey) return <SetupPage projectKey={tab.projectKey} />
   if (tab.type === 'world-building' && tab.projectKey) return <StageArchitecture projectKey={tab.projectKey} />
+  if (tab.type === 'worldbook' && tab.projectKey) return <StageWorldbook projectKey={tab.projectKey} />
   if (tab.type === 'character' && tab.projectKey) return <StageCharacters projectKey={tab.projectKey} />
   if (isChapterViewTab(tab)) return <ChapterView tab={tab} />
   if (isProseDocumentTab(tab) && sameProject) return <ProseDocument tab={tab} project={project} />

@@ -1,11 +1,7 @@
 import { app, ipcMain, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import path from 'node:path'
-import { readJsonFile, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG, MODELS_CONFIG_PATH, CREDENTIALS_CONFIG_PATH } from '../utils/config-utils'
-import { GlobalConfig, ModelProfile, type ProviderCredential } from '../../src/shared/ipc-channels'
-import { resolveModelProfile } from '../../src/shared/provider-credential'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
-import type { EmbeddingOptions } from '../../src/shared/embedding-options'
 import type { ImportRunExecutionAuthority } from '../../src/shared/import-run'
 import { knowledgeBaseLoader } from '../services/knowledge-base-loader'
 import { mainText } from '../i18n'
@@ -29,6 +25,8 @@ import {
 } from '../services/project-storage-preflight'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 import { FinalizationRepository } from '../repositories/finalization-repository'
+import { getEmbeddingConfig } from '../services/embedding-config'
+export { getEmbeddingConfig } from '../services/embedding-config'
 
 function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
@@ -120,22 +118,6 @@ function isLegacyMigrationBlockedResult(value: unknown): boolean {
     && (value as { success?: unknown }).success === false
     && 'errorCode' in value
     && (value as { errorCode?: unknown }).errorCode === LEGACY_VECTOR_MIGRATION_BLOCKED
-}
-
-export function getEmbeddingConfig(): { protocol: 'openai' | 'gemini'; model: { baseUrl: string; apiKey: string; modelName: string; embeddingOptions?: EmbeddingOptions } } | null {
-  const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
-  const targetModelId = config.defaultEmbeddingModelId || config.defaultModelId
-  if (!targetModelId) return null
-
-  const models = readJsonFile<ModelProfile[]>(MODELS_CONFIG_PATH, [])
-  const profile = models.find((m) => m.id === targetModelId)
-  if (!profile) return null
-  const credentials = readJsonFile<ProviderCredential[]>(CREDENTIALS_CONFIG_PATH, [])
-  const model = resolveModelProfile(profile, credentials)
-  return {
-    protocol: model.protocol as 'openai' | 'gemini',
-    model: { baseUrl: model.baseUrl, apiKey: model.apiKey, modelName: model.modelName, embeddingOptions: model.embeddingOptions },
-  }
 }
 
 function hasUsableEmbeddingConfig(
