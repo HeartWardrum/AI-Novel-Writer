@@ -1,9 +1,10 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-import MentionMenu from '../agent/MentionMenu'
-import { getAllMentionTargets } from '../../../services/agent/intent-router'
+import SlashCommandMenu from '../agent/SlashCommandMenu'
+import { getAllSlashCommands } from '../../../services/agent/intent-router'
+import { skillRegistry } from '../../../services/agent/skill-registry'
 import { useLocaleStore } from '../../../stores/locale-store'
 
 const pseudoIconPattern = new RegExp([
@@ -14,20 +15,23 @@ const pseudoIconPattern = new RegExp([
   '\\uFE0F',
 ].join('|'), 'u')
 
+afterEach(() => skillRegistry.clear())
+
 describe('data-driven menu icon contract', () => {
-  it('renders every @ mention target with shared icons instead of Unicode glyphs', () => {
-    const targets = getAllMentionTargets(useLocaleStore.getInitialState().locale)
-    const markup = renderToStaticMarkup(createElement(MentionMenu, {
+  it('renders every slash command with shared icons instead of Unicode glyphs', () => {
+    const locale = useLocaleStore.getInitialState().locale
+    const commands = getAllSlashCommands(locale)
+    const markup = renderToStaticMarkup(createElement(SlashCommandMenu, {
       query: '',
       onSelect: () => undefined,
       onClose: () => undefined,
     }))
 
-    for (const target of targets) {
-      expect(markup).toContain(target.displayName)
-      expect(target).not.toHaveProperty('icon')
+    for (const command of commands) {
+      expect(markup).toContain(`/${command.name}`)
+      expect(command).not.toHaveProperty('icon')
     }
-    expect(JSON.stringify(targets)).not.toMatch(pseudoIconPattern)
+    expect(JSON.stringify(commands)).not.toMatch(pseudoIconPattern)
     expect(markup).not.toMatch(pseudoIconPattern)
     expect(markup).toContain('<svg')
   })

@@ -5,6 +5,7 @@ import { useLocaleStore } from '../../../stores/locale-store'
 import ProjectBackupPanel from '../../backups/ProjectBackupPanel'
 import PromptSettings from '../../settings/PromptSettings'
 import SkillSettings from '../../settings/SkillSettings'
+import RecruitSection from './RecruitSection'
 import { leaveSettings, settleSettingsLeave, useSettingsLeave, useSettingsLeaveHost } from '../../settings/unsaved-settings'
 import { Button } from '../../ui/Button'
 import { DangerConfirm } from '../../ui/DangerConfirm'
@@ -55,6 +56,8 @@ function PageBody({ page }: { page: SettingsSection }) {
       return <><PageHeader page={page} /><Legacy><PromptSettings /></Legacy></>
     case 'skills':
       return <><PageHeader page={page} /><Legacy><SkillSettings /></Legacy></>
+    case 'recruit':
+      return <><PageHeader page={page} /><RecruitSection /></>
     case 'backup':
       return <><PageHeader page={page} /><Legacy><ProjectBackupPanel /></Legacy></>
     case 'about':

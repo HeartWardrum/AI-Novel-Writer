@@ -5,13 +5,11 @@ import { useStageStore, type StageSheet } from '../../stores/navigation/stage-st
 import { ErrorBoundary } from '../ErrorBoundary'
 import AIPanel from '../panels/AIPanel'
 import { Button } from '../ui/Button'
-import DraftAdoptBanner from './DraftAdoptBanner'
-import ChatWriteActions from './ChatWriteActions'
 import { SettingsPage } from './stage-pages'
 import StageWorldbook from './worldbook/StageWorldbook'
 import './chat-workbench.css'
 
-/** 聊天优先工作台：全幅对话；设置与世界书为覆盖层。运行入口暂时隐藏。 */
+/** 聊天优先工作台：全幅对话；设置与世界书为覆盖层。 */
 export default function ChatWorkbench({
   mode: _mode,
   onMode: _onMode,
@@ -32,8 +30,6 @@ export default function ChatWorkbench({
         <div className="chat-workbench-body" role="tabpanel">
           <ErrorBoundary fallbackLabel={text('对话面板渲染失败', 'Chat panel failed to render')}>
             <div className="workbench-chat chat-workbench-chat">
-              <DraftAdoptBanner />
-              <ChatWriteActions />
               <div className="workbench-chat-panel chat-workbench-chat-panel">
                 <AIPanel />
               </div>

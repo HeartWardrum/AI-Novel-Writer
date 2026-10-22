@@ -45,8 +45,8 @@ function fixture(options: { schemaVersion?: number; journalMode?: 'delete' | 'wa
   handles.push(database)
   database.pragma('foreign_keys = ON')
   initializeLegacyBaselineSchema(database)
-  migrateSchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), options.schemaVersion ?? 10)
-  if ((options.schemaVersion ?? 10) === 10) seedCore(database)
+  migrateSchema(new SqliteSchemaAdapter(database), getDesktopMigrationRegistry(), options.schemaVersion ?? 11)
+  if ((options.schemaVersion ?? 11) === 11) seedCore(database)
   if (options.journalMode === 'wal') database.pragma('journal_mode = WAL')
   return { root, storage, scratch, projectId, databasePath, database }
 }

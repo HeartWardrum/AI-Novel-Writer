@@ -68,28 +68,29 @@ afterEach(async () => {
   delete window.aiNovelAPI
 })
 
-describe('三栏写作台的对话', () => {
-  it('打开作品后可见对话栏与材料栏', async () => {
+describe('聊天优先外壳', () => {
+  it('打开作品后是全幅对话，无材料栏与运行轨', async () => {
     await act(async () => root.render(<App />))
     await vi.waitFor(() => expect(host.querySelector('.stage-shell')).not.toBeNull())
-    await vi.waitFor(() => expect(host.querySelector('.workbench-right')).not.toBeNull())
-    expect(host.querySelector('.materials-rail')).not.toBeNull()
-    expect(host.textContent).toMatch(/对话|AI 写作助手/)
+    await vi.waitFor(() => expect(host.querySelector('.chat-workbench')).not.toBeNull())
+    expect(host.querySelector('.materials-rail')).toBeNull()
+    expect(host.querySelector('.workbench-right')).toBeNull()
+    expect(host.querySelector('.workbench-run')).toBeNull()
   })
 
-  it('运行子页可从对话栏切换打开', async () => {
+  it('运行意图在聊天壳下回落到对话', async () => {
     await act(async () => root.render(<App />))
-    await vi.waitFor(() => expect(host.querySelector('.workbench-right')).not.toBeNull())
+    await vi.waitFor(() => expect(host.querySelector('.chat-workbench')).not.toBeNull())
     await act(async () => navigate({ kind: 'run', facet: 'output' }))
-    await vi.waitFor(() => expect(useStageStore.getState().rightRail).toBe('run'))
-    expect(host.querySelector('.workbench-run')).not.toBeNull()
+    expect(useStageStore.getState().rightRail).toBe('chat')
+    expect(host.querySelector('.workbench-run')).toBeNull()
   })
 
-  it('书房不显示写作对话栏', async () => {
+  it('书房不显示对话壳', async () => {
     useLayoutStore.setState({ sidebarView: 'home' })
     await act(async () => root.render(<App />))
     await vi.waitFor(() => expect(host.querySelector('.stage-shell')).not.toBeNull())
-    expect(host.querySelector('.workbench-right')).toBeNull()
+    expect(host.querySelector('.chat-workbench')).toBeNull()
     expect(host.querySelector('.materials-rail')).toBeNull()
   })
 

@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Square,
   Image,
-  AtSign,
   Workflow,
 } from 'lucide-react'
 import { useAgentStore } from '../../../stores/agent-store'
@@ -13,8 +12,7 @@ import { useLLMStore } from '../../../stores/llm-store'
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import { useOutsideClick } from '../../../hooks/useOutsideClick'
 import SlashCommandMenu from './SlashCommandMenu'
-import MentionMenu from './MentionMenu'
-import type { SlashCommand, MentionTarget } from '../../../services/agent/intent-router'
+import type { SlashCommand } from '../../../services/agent/intent-router'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { registerProjectTransitionDraft } from '../../../services/project-transition'
@@ -54,11 +52,9 @@ export default function AgentInputBox() {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [showModelMenu, setShowModelMenu] = useState(false)
 
-  // / 命令和 @ 提及菜单状态
+  // / 命令菜单状态
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
-  const [showMentionMenu, setShowMentionMenu] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
 
   const replaceInputText = useCallback((value: string) => {
     if (!projectKey) return
@@ -95,34 +91,16 @@ export default function AgentInputBox() {
     return unregister
   }, [projectKey, replaceInputText])
 
-  // 检测输入是否触发 / 或 @ 菜单
+  // 检测输入是否触发 / 菜单
   const handleInputChange = useCallback((value: string) => {
     replaceInputText(value)
 
-    // 检测 / 命令
     if (value.startsWith('/')) {
       const q = value.slice(1).split(' ')[0] ?? ''
       setSlashQuery(q)
       setShowSlashMenu(true)
-      setShowMentionMenu(false)
     } else {
       setShowSlashMenu(false)
-    }
-
-    // 检测 @ 提及（在光标位置前面找 @）
-    const lastAt = value.lastIndexOf('@')
-    if (lastAt >= 0) {
-      const afterAt = value.slice(lastAt + 1)
-      // 如果 @ 后面没有空格，视为正在输入提及
-      if (!afterAt.includes(' ')) {
-        setMentionQuery(afterAt)
-        setShowMentionMenu(true)
-        setShowSlashMenu(false)
-      } else {
-        setShowMentionMenu(false)
-      }
-    } else {
-      setShowMentionMenu(false)
     }
   }, [replaceInputText])
 
@@ -140,18 +118,6 @@ export default function AgentInputBox() {
     }
     textareaRef.current?.focus()
   }, [projectKey, replaceInputText, sendMessage])
-
-  // 选择 @ 提及
-  const handleMentionSelect = useCallback((target: MentionTarget) => {
-    setShowMentionMenu(false)
-    // 替换最后一个 @ 及其后面的文字为 @displayName
-    const lastAt = inputText.lastIndexOf('@')
-    if (lastAt >= 0) {
-      const before = inputText.slice(0, lastAt)
-      replaceInputText(`${before}@${target.displayName} `)
-    }
-    textareaRef.current?.focus()
-  }, [inputText, replaceInputText])
 
   const contextRef = useRef<HTMLDivElement>(null)
   const modelRef = useRef<HTMLDivElement>(null)
@@ -210,14 +176,13 @@ export default function AgentInputBox() {
 
   /** 键盘事件：Enter 发送，Shift+Enter 换行 */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // / 或 @ 菜单打开时，由菜单组件处理键盘事件
-    if (showSlashMenu || showMentionMenu) {
+    // / 菜单打开时，由菜单组件处理键盘事件
+    if (showSlashMenu) {
       if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
         return // 让菜单组件通过 window 事件处理
       }
       if (e.key === 'Escape') {
         setShowSlashMenu(false)
-        setShowMentionMenu(false)
         return
       }
     }
@@ -231,7 +196,7 @@ export default function AgentInputBox() {
 
   return (
     <div
-      className="relative flex flex-col gap-0 p-1.5"
+      className="chat-readable-zoom relative flex flex-col gap-0 p-1.5"
       style={{
         backgroundColor: 'var(--color-hover)',
         border: '1px solid var(--color-border)',
@@ -244,15 +209,6 @@ export default function AgentInputBox() {
           query={slashQuery}
           onSelect={handleSlashSelect}
           onClose={() => setShowSlashMenu(false)}
-        />
-      )}
-
-      {/* @ 提及菜单 */}
-      {showMentionMenu && (
-        <MentionMenu
-          query={mentionQuery}
-          onSelect={handleMentionSelect}
-          onClose={() => setShowMentionMenu(false)}
         />
       )}
 
@@ -271,12 +227,6 @@ export default function AgentInputBox() {
             {text('添加上下文', 'Add context')}
           </div>
           <ContextMenuItem icon={<Image size={13} />} label={text('媒体文件', 'Media file')} onClick={() => setShowContextMenu(false)} disabled />
-          <ContextMenuItem icon={<AtSign size={13} />} label={text('@提及', '@ mention')} onClick={() => {
-            setShowContextMenu(false)
-            // 插入 @ 字符并触发 MentionMenu
-            handleInputChange(inputText + '@')
-            textareaRef.current?.focus()
-          }} />
           <ContextMenuItem icon={<Workflow size={13} />} label={text('工作流命令', 'Workflow command')} onClick={() => {
             setShowContextMenu(false)
             // 插入 / 字符并触发 SlashCommandMenu
@@ -293,7 +243,7 @@ export default function AgentInputBox() {
             value={inputText}
             onChange={e => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={text('输入消息，@ 提及，/ 使用工作流...', 'Type a message, @ mention, or / use a workflow...')}
+            placeholder={text('输入消息，/ 使用技能...', 'Type a message, @ mention, or / use a workflow...')}
             rows={1}
             className="w-full resize-none outline-none bg-transparent text-xs leading-relaxed px-2 py-2"
             style={{

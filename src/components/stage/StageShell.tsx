@@ -5,7 +5,6 @@ import { useLocaleStore } from '../../stores/locale-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { navigate } from '../../stores/navigation/navigation-intents'
 import { useStageStore } from '../../stores/navigation/stage-store'
-import { openBuiltinEditor } from '../../stores/open-builtin-editor'
 import { chapterLabel } from '../../shared/chapter-label'
 import type { Theme } from '../../stores/theme-store'
 import ClearProjectDataDialog from '../dialogs/ClearProjectDataDialog'
@@ -21,8 +20,7 @@ import ChatWorkbench from './ChatWorkbench'
 import StageTopBar from './StageTopBar'
 import StageWorkspace from './StageWorkspace'
 import ReferenceFloatLayer from './reference/ReferenceFloatLayer'
-import { usePendingDraftAdoptFromWorkflow } from './DraftAdoptBanner'
-import { CHAPTER_PHASE_TEXT, CHAPTER_RUNNING_TEXT, RESOURCE_NAMES, STAGE_NAMES, stageTabName } from './stage-text'
+import { RESOURCE_NAMES, STAGE_NAMES, stageTabName } from './stage-text'
 import { refreshStageWork, useLandingPage, useStageView, useStageWorkRefresh, type StageView } from './use-stage-work'
 import { useStageShortcuts } from './use-stage-shortcuts'
 import './chat-workbench.css'
@@ -34,7 +32,6 @@ const backToLibrary = () => leaveSettingsThen(() => {
   useLayoutStore.getState().setSidebarView('home')
 })
 const newBook = () => leaveSettingsThen(() => useLayoutStore.getState().openNewProject())
-const importNovel = () => leaveSettingsThen(() => useLayoutStore.getState().openImportNovel())
 
 function crumbsFor(view: StageView, library: boolean, activeName: string | undefined, text: Text): string[] {
   if (library) return []
@@ -68,7 +65,6 @@ export default function StageShell({ theme }: { theme: Theme }) {
   useStageWorkRefresh()
   useLandingPage(view)
   useStageShortcuts({ library, focus })
-  usePendingDraftAdoptFromWorkflow()
 
   useEffect(() => {
     if (library && useStageStore.getState().focus) useStageStore.setState({ focus: false })
@@ -98,42 +94,15 @@ export default function StageShell({ theme }: { theme: Theme }) {
       { id: 'new', label: text('新建作品…', 'New book…'), onSelect: newBook },
     ] },
     { id: 'files', items: [
-      { id: 'export', label: text('导出…', 'Export…'), onSelect: () => useLayoutStore.getState().openExport() },
       { id: 'backup', label: text('项目备份', 'Project backup'), onSelect: () => navigate({ kind: 'settings', section: 'backup' }) },
-      { id: 'import', label: text('小说拆解与仿写…', 'Novel breakdown & imitation…'), onSelect: importNovel },
     ] },
     { id: 'danger', tone: 'danger', items: [
       { id: 'clear', label: text('清除生成内容…', 'Clear generated content…'), onSelect: () => setClearOpen(true) },
     ] },
   ], [text])
 
+  // 命令面板只留：新建/打开/回书房/对话/世界书/设置/备份；不进舞台写稿、运行、导出、拆解。
   const paletteItems = useMemo<PaletteItem[]>(() => {
-    const go = view.stages
-      .filter(status => status.stage !== 'blueprint')
-      .map(status => paletteItem('stage', {
-        id: `stage-${status.stage}`, label: text(...STAGE_NAMES[status.stage]),
-        run: () => navigate({ kind: 'stage', stage: status.stage }),
-      }))
-    const chapters = view.chapters.map(row => paletteItem('chapter', {
-      id: `chapter-${row.number}`, chapter: row.number,
-      label: row.title ? `${chapterLabel(row.number, text)} · ${row.title}` : chapterLabel(row.number, text),
-      meta: text(...(row.running ? CHAPTER_RUNNING_TEXT : CHAPTER_PHASE_TEXT[row.phase])),
-      run: () => navigate({ kind: 'chapter', chapterNumber: row.number }),
-    }))
-    const references = hasProject && !library ? [
-      ...(Object.keys(RESOURCE_NAMES) as (keyof typeof RESOURCE_NAMES)[]).map(page => paletteItem('reference', {
-        id: `resource-${page}`, label: text(...RESOURCE_NAMES[page]),
-        run: () => {
-          if (page === 'worldbook') {
-            leaveSettingsThen(() => useStageStore.setState({ chatOverlay: 'worldbook' }))
-            return
-          }
-          navigate({ kind: 'resource', page })
-        },
-      })),
-      paletteItem('reference', { id: 'characters', label: text('角色名单', 'Cast'), keywords: 'roster characters 角色',
-        run: () => leaveSettingsThen(() => openBuiltinEditor('character-editor', text('角色名单', 'Cast'), 'character')) }),
-    ] : []
     const books = recentProjects.map(project => paletteItem('action', {
       id: `book-${project.path}`, label: text(`打开《${project.name}》`, `Open “${project.name}”`), keywords: project.name,
       run: () => leaveSettingsThen(() => void useProjectStore.getState().openProject(project.path)),
@@ -141,18 +110,24 @@ export default function StageShell({ theme }: { theme: Theme }) {
     const actions = [
       paletteItem('action', { id: 'new', label: text('新建作品', 'New book'), run: newBook }),
       paletteItem('action', { id: 'open', label: text('打开作品', 'Open a book'), run: openProjectFolder }),
-      paletteItem('action', { id: 'import', label: text('小说拆解与仿写', 'Novel breakdown & imitation'), run: importNovel }),
       ...(hasProject ? [
         paletteItem('action', { id: 'library', label: text('回到书房', 'Back to library'), run: backToLibrary }),
-        paletteItem('action', { id: 'chat', label: text('对话', 'Chat'), keywords: '助手 AI 聊天', run: () => useStageStore.setState({ rightRail: 'chat', chatOverlay: null }) }),
-        paletteItem('action', { id: 'export', label: text('导出', 'Export'), run: () => useLayoutStore.getState().openExport() }),
-        paletteItem('action', { id: 'backup', label: text('项目备份', 'Project backup'), run: () => navigate({ kind: 'settings', section: 'backup' }) }),
+        paletteItem('action', { id: 'chat', label: text('对话', 'Chat'), keywords: '助手 AI 聊天',
+          run: () => useStageStore.setState({ rightRail: 'chat', chatOverlay: null }) }),
+        ...(library ? [] : [
+          paletteItem('action', {
+            id: 'worldbook', label: text('世界书', 'Worldbook'), keywords: 'worldbook 设定',
+            run: () => leaveSettingsThen(() => useStageStore.setState({ chatOverlay: 'worldbook' })),
+          }),
+        ]),
+        paletteItem('action', { id: 'backup', label: text('项目备份', 'Project backup'),
+          run: () => navigate({ kind: 'settings', section: 'backup' }) }),
       ] : []),
-      ...(hasProject && !library ? [paletteItem('action', { id: 'focus', label: text('沉浸写作', 'Focus mode'), run: toggleFocus })] : []),
-      paletteItem('action', { id: 'settings', label: text('设置', 'Settings'), run: () => navigate({ kind: 'settings', section: 'llm' }) }),
+      paletteItem('action', { id: 'settings', label: text('设置', 'Settings'),
+        run: () => navigate({ kind: 'settings', section: 'llm' }) }),
     ]
-    return [...go, ...chapters, ...references, ...actions, ...(library ? books : [])]
-  }, [view.stages, view.chapters, hasProject, library, text, toggleFocus, recentProjects])
+    return [...actions, ...(library ? books : [])]
+  }, [hasProject, library, text, recentProjects])
 
   const settingsName = SETTINGS_PAGES.find(page => page.id === settingsSection)?.name
   const crumbs = settingsOpen && settingsName ? [text('设置', 'Settings'), text(...settingsName)] : crumbsFor(view, library, activeName, text)

@@ -116,12 +116,13 @@ describe('project refresh context', () => {
       expect(after.layout.sidebarView).toBe('home')
     })
 
-    it('加载完成前打开的运行侧页留着', async () => {
+    it('加载完成前的运行意图在聊天壳下回落到对话', async () => {
       const after = await openBWithSlowTree(
         () => useLayoutStore.setState({ sidebarView: 'project', settingsOpen: false }),
         () => navigate({ kind: 'run', facet: 'tasks' }),
       )
-      expect(after.sheet).toEqual({ kind: 'run', tab: 'active', runId: undefined })
+      expect(after.sheet).toBeNull()
+      expect(useStageStore.getState().rightRail).toBe('chat')
     })
   })
 

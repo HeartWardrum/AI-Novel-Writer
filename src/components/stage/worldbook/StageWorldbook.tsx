@@ -139,7 +139,9 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [draftTitle, setDraftTitle] = useState('')
+  const [draftKind, setDraftKind] = useState<WorldbookEntryKind>('custom')
   const [draftContent, setDraftContent] = useState('')
+  const [draftPrivateContent, setDraftPrivateContent] = useState('')
   const [draftActivation, setDraftActivation] = useState<WorldbookActivation>(defaultWorldbookActivation())
   const [splitProposals, setSplitProposals] = useState<SplitProposal[] | null>(null)
   const [splitting, setSplitting] = useState(false)
@@ -156,7 +158,9 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const selected = entries.find(entry => entry.id === selectedId) ?? null
   const dirty = Boolean(selected && (
     draftTitle !== selected.title
+    || draftKind !== selected.kind
     || draftContent !== selected.content
+    || draftPrivateContent !== (selected.privateContent ?? '')
     || JSON.stringify(draftActivation) !== JSON.stringify(selected.activation)
   ))
 
@@ -165,7 +169,9 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     if (entry?.id !== '__new__') newDraftRef.current = null
     setSelectedId(entry?.id ?? null)
     setDraftTitle(entry?.title ?? '')
+    setDraftKind(entry?.kind ?? 'custom')
     setDraftContent(entry?.content ?? '')
+    setDraftPrivateContent(entry?.kind === 'character' ? (entry.privateContent ?? '') : '')
     setDraftActivation(cloneActivation(entry?.activation ?? defaultWorldbookActivation()))
   }
 
@@ -243,6 +249,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
       kind,
       title: '',
       content: '',
+      privateContent: '',
       promptContent: '',
       activation,
       source: { kind: 'author', id: '', revision: '' },
@@ -256,7 +263,9 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     setEntries(current => [newEntry, ...current.filter(entry => entry.id !== '__new__')])
     setSelectedId('__new__')
     setDraftTitle('')
+    setDraftKind(kind)
     setDraftContent('')
+    setDraftPrivateContent('')
     setDraftActivation(activation)
   }
 
@@ -279,11 +288,13 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
         secondaryKeys: [],
         promptPolicy: draftActivation.promptPolicy || 'full',
       })
+      const kind = system ? 'rule' : draftKind
       const saved = await saveWorldbookEntry(session, {
         ...(selected.id === '__new__' ? {} : { id: selected.id, expectedRevision: selected.revision }),
-        kind: system ? 'rule' : selected.kind,
+        kind,
         title: draftTitle,
         content: draftContent,
+        privateContent: kind === 'character' ? draftPrivateContent : '',
         activation,
         sourceKind: selected.source.kind === 'import' ? 'import' : 'author',
       })
@@ -547,7 +558,26 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
             <>
               <header className="worldbook-editor-head">
                 <div className="worldbook-editor-meta">
-                  <span className="worldbook-kind-chip">{text(...KIND_NAMES[selected.kind])}</span>
+                  <label className="worldbook-kind-field">
+                    <span className="sr-only">{text('条目类型', '条目类型')}</span>
+                    <select
+                      value={draftKind}
+                      disabled={isWorldbookSystemEntry(selected) || selected.deletable === false}
+                      aria-label={text('条目类型', '条目类型')}
+                      onChange={event => {
+                        const next = event.target.value as WorldbookEntryKind
+                        setDraftKind(next)
+                        if (next !== 'character') setDraftPrivateContent('')
+                        if (selected.id === '__new__' && newDraftRef.current) {
+                          newDraftRef.current = { ...newDraftRef.current, kind: next, privateContent: next === 'character' ? draftPrivateContent : '' }
+                        }
+                      }}
+                    >
+                      {WORLD_BOOK_ENTRY_KINDS.map(kind => (
+                        <option key={kind} value={kind}>{text(...KIND_NAMES[kind])}</option>
+                      ))}
+                    </select>
+                  </label>
                   <span>{sourceLabel(selected, text)}</span>
                   {selected.needsReview && <span className="worldbook-review-chip">{text('待核对', 'Needs review')}</span>}
                 </div>
@@ -576,11 +606,30 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
                 <textarea
                   className="worldbook-content-input"
                   value={draftContent}
-                  aria-label={text('条目正文', 'Entry content')}
-                  placeholder={text('写下正文、事实、设定或参考资料摘录。', 'Write the entry text, facts, lore, or reference notes.')}
+                  aria-label={draftKind === 'character'
+                    ? text('公开人设', '公开人设')
+                    : text('条目正文', '条目正文')}
+                  placeholder={draftKind === 'character'
+                    ? text('公开人设：外貌、身份等别人可能知道的内容。', '公开人设：外貌、身份等别人可能知道的内容。')
+                    : text('写下正文、事实、设定或参考资料摘录。', '写下正文、事实、设定或参考资料摘录。')}
                   onChange={event => setDraftContent(event.target.value)}
                 />
               </div>
+              {draftKind === 'character' && (
+                <div className="worldbook-content-frame worldbook-private-frame">
+                  <label className="worldbook-private-label" htmlFor="worldbook-private-content">
+                    {text('私有认知（只有此人知道）', '私有认知（只有此人知道）')}
+                  </label>
+                  <textarea
+                    id="worldbook-private-content"
+                    className="worldbook-content-input"
+                    value={draftPrivateContent}
+                    aria-label={text('私有认知', '私有认知')}
+                    placeholder={text('分配作业写入，也可手改。不要把全书通用设定整段粘进来。', '分配作业写入，也可手改。不要把全书通用设定整段粘进来。')}
+                    onChange={event => setDraftPrivateContent(event.target.value)}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

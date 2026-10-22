@@ -7,6 +7,8 @@ import { BUILTIN_PROMPTS, EDITABLE_PROMPT_KEYS, getBuiltinPromptTemplate, getPro
 const expectedPromptVariables: Record<string, string[]> = {
   planning_material_character_extraction: ['requested_ids', 'sources'],
   direct_chat_system: [],
+  recruit_finalize: ['answers'],
+  recruit_recommend: ['context'],
   assistant_writing_identity: ['mode_instruction'],
   edit_selected_text: [
     'edit_instruction',

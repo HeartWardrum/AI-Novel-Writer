@@ -48,6 +48,7 @@ interface GenericEntryRow {
   kind: WorldbookEntryKind
   title: string
   content: string
+  private_content: string
   source_kind: WorldbookSourceKind
   source_key: string
   source_revision: string
@@ -139,6 +140,7 @@ function projectEntry(
     kind,
     title,
     content,
+    privateContent: '',
     promptContent: content,
     activation,
     source: { kind: 'project', id, revision },
@@ -228,6 +230,7 @@ function characterEntries(db: NonNullable<ReturnType<typeof getProjectDb>>): Wor
       kind: 'character' as const,
       title: name,
       content,
+      privateContent: '',
       promptContent: content,
       activation,
       source: { kind: 'character' as const, id, revision: sha256(content) },
@@ -260,6 +263,7 @@ function relationshipEntries(db: NonNullable<ReturnType<typeof getProjectDb>>): 
       kind: 'relationship' as const,
       title: `${row.source_name} ↔ ${row.target_name}`,
       content,
+      privateContent: '',
       promptContent: content,
       activation,
       source: { kind: 'character' as const, id: String(row.relationship_id), revision: sha256(content) },
@@ -293,6 +297,7 @@ function blueprintEntries(db: NonNullable<ReturnType<typeof getProjectDb>>, curr
       kind: 'blueprint' as const,
       title: blueprint.title || `第 ${blueprint.chapterNumber} 章蓝图`,
       content,
+      privateContent: '',
       promptContent: content,
       activation,
       source: { kind: 'blueprint' as const, id: String(blueprint.chapterNumber), revision: sha256(content) },
@@ -340,6 +345,7 @@ function chapterEntries(db: NonNullable<ReturnType<typeof getProjectDb>>, curren
       kind: 'chapter' as const,
       title: row.chapter_title ? `第 ${chapterNumber} 章 · ${row.chapter_title}` : `第 ${chapterNumber} 章`,
       content,
+      privateContent: '',
       promptContent: promptContent || content.slice(-2_000),
       activation,
       source: { kind: 'chapter' as const, id: String(row.id), revision: sha256(content) },
@@ -368,6 +374,7 @@ function plotEntries(): WorldbookEntry[] {
       kind: 'plot-thread' as const,
       title: thread.title,
       content,
+      privateContent: '',
       promptContent: content,
       activation,
       source: { kind: 'plot-thread' as const, id: String(thread.id), revision: sha256(content) },
@@ -405,6 +412,7 @@ async function referenceEntries(
         kind: 'reference',
         title,
         content,
+        privateContent: '',
         promptContent: content,
         activation,
         source: { kind: 'reference', id: document.id, revision: document.importedAt },
@@ -436,6 +444,7 @@ function genericEntries(
       kind: row.kind,
       title: row.title,
       content: row.content,
+      privateContent: row.kind === 'character' ? (row.private_content ?? '') : '',
       promptContent: row.content,
       activation,
       source: {
@@ -658,7 +667,12 @@ export class WorldbookRepository {
       ? 'system'
       : request.sourceKind === 'import' ? 'import' : 'author'
     const sourceId = request.sourceId?.trim() ?? ''
-    const sourceRevision = sha256(JSON.stringify([title, content]))
+    const kind = system ? 'rule' : request.kind
+    const privateContent = kind === 'character'
+      ? (typeof request.privateContent === 'string' ? request.privateContent : '')
+      : ''
+    if (privateContent.length > 2_000_000) throw new Error('WORLDBOOK_ENTRY_INVALID')
+    const sourceRevision = sha256(JSON.stringify([title, content, privateContent]))
     return db.transaction(() => {
       const existing = request.id ? db.prepare('SELECT * FROM worldbook_entries WHERE id=?').get(request.id) as GenericEntryRow | undefined : undefined
       if (request.id && !existing) throw new Error('WORLDBOOK_ENTRY_READ_ONLY')
@@ -672,16 +686,16 @@ export class WorldbookRepository {
       const sourceKey = system
         ? WORLD_BOOK_SYSTEM_DIRECT_CHAT_SOURCE_KEY
         : existing?.source_key
-          || (sourceId ? `${sourceId}:${sha256(JSON.stringify([title, content])).slice(0, 20)}` : '')
-      const kind = system ? 'rule' : request.kind
+          || (sourceId ? `${sourceId}:${sha256(JSON.stringify([title, content, privateContent])).slice(0, 20)}` : '')
       db.prepare(`
         INSERT INTO worldbook_entries(
-          id,kind,title,content,source_kind,source_key,source_revision,needs_review,revision,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,1,datetime('now'))
+          id,kind,title,content,private_content,source_kind,source_key,source_revision,needs_review,revision,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,1,datetime('now'))
         ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,title=excluded.title,content=excluded.content,
+          private_content=excluded.private_content,
           source_kind=excluded.source_kind,source_key=excluded.source_key,source_revision=excluded.source_revision,
           needs_review=excluded.needs_review,revision=worldbook_entries.revision+1,updated_at=datetime('now')
-      `).run(id, kind, title, content, sourceKind, sourceKey, sourceRevision,
+      `).run(id, kind, title, content, privateContent, sourceKind, sourceKey, sourceRevision,
         system ? 0 : (request.needsReview ? 1 : 0))
       saveSettings(db, id, activation)
       const row = db.prepare('SELECT * FROM worldbook_entries WHERE id=?').get(id) as GenericEntryRow
@@ -690,6 +704,7 @@ export class WorldbookRepository {
         kind: row.kind,
         title: row.title,
         content: row.content,
+        privateContent: row.kind === 'character' ? (row.private_content ?? '') : '',
         promptContent: row.content,
         activation,
         source: { kind: row.source_kind, id: row.source_key || row.id, revision: row.source_revision },

@@ -66,16 +66,16 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
 
-describe('portable v10 field policy', () => {
-  it('与实际当前registry双向精确匹配57表529字段，并包含对话表', () => {
+describe('portable v11 field policy', () => {
+  it('与实际当前registry双向精确匹配57表530字段，并包含对话表', () => {
     const { database } = openCurrent()
-    expect(database.pragma('user_version', { simple: true })).toBe(10)
+    expect(database.pragma('user_version', { simple: true })).toBe(11)
     const tables = database.prepare("SELECT name FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite_%'")
       .all() as Array<{ name: string }>
     const fieldCount = tables.reduce((count, table) => count
       + (database.prepare(`PRAGMA table_info("${table.name}")`).all() as unknown[]).length, 0)
-    expect({ tables: tables.length, fields: fieldCount }).toEqual({ tables: 57, fields: 529 })
-    expect(assertPortableSourceSchema(database)).toEqual({ tables: 57, fields: 529 })
+    expect({ tables: tables.length, fields: fieldCount }).toEqual({ tables: 57, fields: 530 })
+    expect(assertPortableSourceSchema(database)).toEqual({ tables: 57, fields: 530 })
     expect(getPortableFieldPolicy('review_cycle_merges', 'cycle_id').disposition).toBe('historical-nonreplayable')
     expect(getPortableFieldPolicy('review_cycle_merges', 'body').disposition).toBe('historical-nonreplayable')
     expect(listPortableFieldPolicyKeys()).toContain('blueprint_commit_operations.operation_id')
@@ -178,7 +178,7 @@ describe('portable v10 field policy', () => {
         .all() as Array<{ name: string }>
       const fields = tables.reduce((count, table) => count
         + (database.prepare(`PRAGMA table_info("${table.name}")`).all() as unknown[]).length, 0)
-      expect({ tables: tables.length, fields }).toEqual({ tables: 57, fields: 529 })
+      expect({ tables: tables.length, fields }).toEqual({ tables: 57, fields: 530 })
       expect(() => assertPortableSourceSchema(database)).toThrow('PORTABLE_SCHEMA_UNSUPPORTED')
     } finally { database.close() }
     expect(fs.readFileSync(project.databasePath)).toEqual(before)

@@ -8,7 +8,6 @@ import { useLocaleStore } from '../../../../stores/locale-store'
 import { useMCPStore } from '../../../../stores/mcp-store'
 import { MenuItem } from '../../../ui/MenuItem'
 import AgentHeader from '../AgentHeader'
-import MentionMenu from '../MentionMenu'
 import SlashCommandMenu from '../SlashCommandMenu'
 
 let container: HTMLDivElement
@@ -66,11 +65,10 @@ afterEach(async () => {
 })
 
 describe('Agent reachable UI locale', () => {
-  it('renders slash commands, mentions, the header skill menu, and disabled menu copy in English', async () => {
+  it('renders slash commands, the header skill menu, and disabled menu copy in English', async () => {
     await act(async () => root.render(
       <div>
         <SlashCommandMenu query="" onSelect={() => undefined} onClose={() => undefined} />
-        <MentionMenu query="" onSelect={() => undefined} onClose={() => undefined} />
         <MenuItem label="Future action" disabled onClick={() => undefined} />
         <AgentHeader />
       </div>,
@@ -78,8 +76,6 @@ describe('Agent reachable UI locale', () => {
 
     expect(container.textContent).toContain('Commands')
     expect(container.textContent).toContain('Show available commands and features')
-    expect(container.textContent).toContain('Reference context')
-    expect(container.textContent).toContain('Story architecture')
     expect(container.textContent).toContain('Coming soon')
     expect(container.textContent).toContain('AI Writing Assistant')
 

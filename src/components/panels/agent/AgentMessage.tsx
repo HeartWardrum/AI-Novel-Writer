@@ -9,6 +9,10 @@
 import { useState, type ReactNode } from 'react'
 import { Check, Copy, Pencil, Trash2, RotateCw } from 'lucide-react'
 import {
+  formatAgentContextReceiptHint,
+  type AgentContextReceipt,
+} from '../../../shared/agent-chat'
+import {
   useAgentStore,
   type AgentMessage as AgentMessageType,
   type AgentRequestDebug,
@@ -22,6 +26,21 @@ import '../../../styles/agent-tools.css'
 
 interface Props {
   message: AgentMessageType
+}
+
+function ContextReceiptHint({ receipt }: { receipt: AgentContextReceipt }) {
+  const text = useLocaleStore(state => state.text)
+  const hint = formatAgentContextReceiptHint(receipt, text)
+  if (!hint) return null
+  return (
+    <p
+      className="mb-1.5 text-[0.68rem] leading-relaxed"
+      style={{ color: 'var(--color-text-muted)' }}
+      data-testid="agent-context-receipt"
+    >
+      {hint}
+    </p>
+  )
 }
 
 function RequestDebugPanel({ debug }: { debug: AgentRequestDebug }) {
@@ -123,7 +142,7 @@ function MessageActionButton({
 }
 
 export default function AgentMessage({ message }: Props) {
-  const { id, role, content, streaming, toolCalls, artifacts, requestDebug } = message
+  const { id, role, content, streaming, toolCalls, artifacts, requestDebug, contextReceipt } = message
   const text = useLocaleStore(state => state.text)
   const generating = useAgentStore(state => state.generating)
   const deleteMessage = useAgentStore(state => state.deleteMessage)
@@ -265,7 +284,7 @@ export default function AgentMessage({ message }: Props) {
     return (
       <div className="group relative flex justify-end mb-2">
         <div
-          className="max-w-[88%] px-3 py-2 rounded-2xl text-xs leading-relaxed break-words whitespace-pre-wrap"
+          className="chat-readable-zoom max-w-[88%] px-3 py-2 rounded-2xl text-xs leading-relaxed break-words whitespace-pre-wrap"
           style={{
             backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
             border: '1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)',
@@ -283,11 +302,13 @@ export default function AgentMessage({ message }: Props) {
   return (
     <div className="group relative flex justify-start mb-2">
       <div
-        className="max-w-full text-xs leading-relaxed break-words w-full"
+        className="chat-readable-zoom max-w-full text-xs leading-relaxed break-words w-full"
         style={{ color: 'var(--color-text)' }}
       >
         {editing ? editor : (
           <>
+            {contextReceipt ? <ContextReceiptHint receipt={contextReceipt} /> : null}
+
             {content ? (
               <MarkdownContent content={content} streaming={streaming} />
             ) : streaming ? (

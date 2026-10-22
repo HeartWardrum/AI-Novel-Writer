@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 10,
+  "schemaVersion": 11,
   "rules": {
     "D": ["preserve-domain", "signed-domain-value", "portable-domain-copy"],
     "H": ["historical-nonreplayable", "nonreplayable-history", "portable-history-projector"],
@@ -129,7 +129,7 @@
     "summary_snapshots": {"id":"D","draft_id":"D","chapter_number":"D","character_states":"D","chapter_notes":"D","continuity_facts":"D","character_state_candidates":"D","source_finalization_id":"D","source_content_hash":"D","projection_generation":"D","created_at":"D"},
     "agent_chat_meta": {"id":"D","active_conversation_id":"D"},
     "agent_conversations": {"id":"D","title":"D","model_id":"D","messages_json":"D","created_at":"D","updated_at":"D"},
-    "worldbook_entries": {"id":"D","kind":"D","title":"D","content":"D","source_kind":"D","source_key":"D","source_revision":"D","needs_review":"D","revision":"D","created_at":"D","updated_at":"D"},
+    "worldbook_entries": {"id":"D","kind":"D","title":"D","content":"D","private_content":"D","source_kind":"D","source_key":"D","source_revision":"D","needs_review":"D","revision":"D","created_at":"D","updated_at":"D"},
     "worldbook_entry_settings": {"entry_id":"D","primary_keys_json":"D","secondary_keys_json":"D","match_mode":"D","always_on":"D","enabled":"D","stages_json":"D","priority":"D","insertion_order":"D","group_name":"D","prompt_policy":"D","updated_at":"D"},
     "text_metric_versions": {"metric":"B","version":"B","updated_at":"B"}
   }

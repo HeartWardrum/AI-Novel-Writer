@@ -49,6 +49,8 @@ export const EDITABLE_PROMPT_KEYS: string[] = [
   'infer_novel_config',
   'infer_single_chapter_blueprint',
   'infer_novel_config_with_vectors',
+  'recruit_finalize',
+  'recruit_recommend',
 ]
 
 /**
@@ -62,6 +64,8 @@ export const PROMPT_VARIABLE_DESCRIPTIONS_EN: Readonly<Record<string, string>> =
   edit_instruction: 'Author request for the selected prose',
   selected_text: 'Selected prose from the editor',
   user_idea: 'Idea or premise provided by the author',
+  answers: 'Recruit questionnaire answers',
+  context: 'Project setting summary for recruit recommendations',
   number_of_chapters: 'Planned total number of chapters',
   word_number: 'Target words per chapter',
   genre: 'Novel genre',
@@ -195,9 +199,63 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
     key: 'direct_chat_system',
     name: '直连对话系统提示',
     description: '右栏对话发给模型的系统身份与指导（不含工具协议）',
-    systemRole: '你是写作助手，用对话帮用户构思、讨论与润色。若要把内容写进作品正文，请提醒用户使用界面上的「写本章」。不要调用工具，不要输出 tool_call、invoke 或类似协议标签。',
+    systemRole: '你是小说写作助手，用对话帮用户构思、讨论与润色。不要调用工具，不要输出 tool_call、invoke 或类似协议标签。',
     variables: {},
     content: '',
+  },
+
+  {
+    key: 'recruit_finalize',
+    name: '酒馆招新·整理入库',
+    description: '根据招新答卷整理人物卡并写入世界书；未答字段保持空，禁止臆造。',
+    systemRole: '你是小说人物设定助手。根据作者答卷整理人物卡。不要调用工具。',
+    variables: {
+      answers: '作者答卷（含跳过/未答）',
+    },
+    content: `根据以下酒馆招新答卷整理一个人物。
+未答或跳过的项保持空字符串，不要编造。
+只输出一个 JSON 对象（不要 Markdown 代码围栏，不要其它说明）：
+{
+  "name": "姓名（若答卷无姓名可用「未名新人」）",
+  "gender": "性别",
+  "age": "年龄",
+  "relationships": "人际关系",
+  "appearance": "外貌",
+  "personality": "性格",
+  "keywords": ["触发关键词，含姓名与称呼"]
+}
+
+答卷：
+{{answers}}`,
+  },
+
+  {
+    key: 'recruit_recommend',
+    name: '酒馆招新·推荐三人',
+    description: '根据本书上下文推荐三个可招新人选（姓名、性别、年龄、人际关系、外貌、性格）。',
+    systemRole: '你是小说人物设定助手。根据已有设定推荐配角人选。不要调用工具。',
+    variables: {
+      context: '本书相关设定摘要',
+    },
+    content: `根据下列作品设定，推荐 3 个适合新登场的人物。
+每人只填：姓名、性别、年龄、人际关系、外貌、性格，并给一句推荐理由。
+不要与已有重要人物完全撞名。
+只输出 JSON 数组（不要 Markdown 代码围栏）：
+[
+  {
+    "name": "",
+    "gender": "",
+    "age": "",
+    "relationships": "",
+    "appearance": "",
+    "personality": "",
+    "keywords": [],
+    "reason": ""
+  }
+]
+
+作品设定：
+{{context}}`,
   },
 
   {

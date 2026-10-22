@@ -160,6 +160,15 @@
   font-weight: 560;
   outline: 0;
 }
+.worldbook-kind-field select {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 4px 8px;
+}
 .worldbook-content-frame {
   min-height: 280px;
   flex: 1 0 auto;
@@ -168,6 +177,20 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+.worldbook-private-frame {
+  margin-top: var(--s-3);
+  min-height: 180px;
+}
+.worldbook-private-label {
+  display: block;
+  padding: 8px 11px 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.worldbook-private-frame .worldbook-content-input {
+  min-height: 160px;
 }
 .worldbook-content-tabs {
   justify-content: space-between;

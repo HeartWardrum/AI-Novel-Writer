@@ -1,0 +1,4 @@
+/* 对话可读区字号：由 AIPanel 上的 --chat-font-scale 驱动，不碰整窗 zoomFactor */
+.chat-readable-zoom {
+  zoom: var(--chat-font-scale, 1);
+}

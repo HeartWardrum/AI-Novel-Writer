@@ -16,6 +16,7 @@ function entry(
     kind: 'custom',
     title,
     content,
+    privateContent: '',
     promptContent: content,
     activation,
     source: { kind: 'author', id, revision: '1' },

@@ -72,6 +72,11 @@ export interface WorldbookEntry {
   kind: WorldbookEntryKind
   title: string
   content: string
+  /**
+   * 仅 `kind === 'character'` 有意义：此人私有认知。
+   * 通用设定仍放在非人物条目的 content，不按角色复制。
+   */
+  privateContent: string
   promptContent: string
   activation: WorldbookActivation
   source: WorldbookSource
@@ -99,6 +104,8 @@ export interface WorldbookEntrySaveRequest {
   kind: WorldbookEntryKind
   title: string
   content: string
+  /** 仅人物条目持久化；其它类型保存时清空。 */
+  privateContent?: string
   activation: WorldbookActivation
   sourceKind?: 'author' | 'import'
   sourceId?: string

@@ -4,6 +4,7 @@ import { useAgentStore } from '../../../stores/agent-store'
 import { APP_BRAND } from '../../../shared/brand'
 import AgentMessage from './AgentMessage'
 import AgentInputBox from './AgentInputBox'
+import RecruitForm from './RecruitForm'
 import { formatRelativeTime } from '../../../utils/time'
 import { useLocaleStore } from '../../../stores/locale-store'
 
@@ -11,23 +12,198 @@ import { useLocaleStore } from '../../../stores/locale-store'
  * 对话区域主组件
  * - 空状态：居中显示欢迎词 + 输入框 + 最近会话（参考 agent1.html pt-[30vh] 设计）
  * - 有会话：消息列表 + 底部固定输入框
+ * - 酒馆招新：临时消息列表（不进主会话）
  */
 export default function AgentConversation() {
-  const { getActiveConversation, showHistory } = useAgentStore()
-  const activeConv = getActiveConversation()
+  const showHistory = useAgentStore(s => s.showHistory)
+  const recruitActive = useAgentStore(s => s.recruitActive)
+  const activeConv = useAgentStore(s => s.getActiveConversation())
 
-  // 历史面板模式
   if (showHistory) {
     return <AgentHistoryPanel />
   }
 
-  // 空状态（无活跃会话）
+  if (recruitActive) {
+    return <RecruitConversation />
+  }
+
   if (!activeConv || activeConv.messages.length === 0) {
     return <EmptyState />
   }
 
-  // 有消息的对话视图
   return <ActiveConversation />
+}
+
+/** 输入框上方：酒馆招新 / 分配作业，或招募中的确定/炒掉/重开 */
+function RecruitToolbar() {
+  const text = useLocaleStore(s => s.text)
+  const recruitActive = useAgentStore(s => s.recruitActive)
+  const generating = useAgentStore(s => s.generating)
+  const recruitBusy = useAgentStore(s => s.recruitBusy)
+  const assignHomework = useAgentStore(s => s.assignHomework)
+  const startRecruit = useAgentStore(s => s.startRecruit)
+  const startAssignHomework = useAgentStore(s => s.startAssignHomework)
+  const cancelAssignHomework = useAgentStore(s => s.cancelAssignHomework)
+  const finishRecruit = useAgentStore(s => s.finishRecruit)
+  const cancelRecruit = useAgentStore(s => s.cancelRecruit)
+  const restartRecruit = useAgentStore(s => s.restartRecruit)
+  const busy = generating || recruitBusy || assignHomework.active
+
+  if (assignHomework.active) {
+    const ratio = assignHomework.total > 0
+      ? Math.min(1, (assignHomework.index + 1) / assignHomework.total)
+      : 0
+    const title = assignHomework.currentTitle.trim() || text('某人', '某人')
+    const statusLine = assignHomework.phase === 'preparing'
+      ? title
+      : text(`「${title}」正在仔细学习…`, `「${title}」正在仔细学习…`)
+    return (
+      <div
+        className="mb-2 rounded-md px-2.5 py-2"
+        style={{
+          border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
+          background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+        }}
+        role="status"
+        aria-live="polite"
+        data-testid="assign-homework-progress"
+      >
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-[0.7rem]" style={{ color: 'var(--color-text-secondary)' }}>
+            {statusLine}
+          </span>
+          <button
+            type="button"
+            onClick={() => cancelAssignHomework()}
+            className="rounded px-2 py-0.5 text-[0.7rem] disabled:opacity-50"
+            style={{
+              color: 'var(--color-text)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            {text('取消', '取消')}
+          </button>
+        </div>
+        <div
+          className="h-1.5 overflow-hidden rounded-full"
+          style={{ background: 'var(--color-hover)' }}
+          aria-valuemin={0}
+          aria-valuemax={assignHomework.total}
+          aria-valuenow={Math.min(assignHomework.index + 1, assignHomework.total)}
+          role="progressbar"
+        >
+          <div
+            className="h-full rounded-full transition-[width] duration-300"
+            style={{
+              width: `${Math.round(ratio * 100)}%`,
+              background: 'var(--color-accent)',
+            }}
+          />
+        </div>
+        <p className="mt-1 text-[0.65rem]" style={{ color: 'var(--color-text-muted)' }}>
+          {text(
+            `${Math.min(assignHomework.index + 1, assignHomework.total)} / ${assignHomework.total}`,
+            `${Math.min(assignHomework.index + 1, assignHomework.total)} / ${assignHomework.total}`,
+          )}
+        </p>
+      </div>
+    )
+  }
+
+  if (!recruitActive) {
+    return (
+      <div className="mb-2 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => startRecruit()}
+          className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            color: 'var(--color-accent)',
+            border: '1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)',
+            background: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
+          }}
+        >
+          {text('酒馆招新', '酒馆招新')}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => { void startAssignHomework() }}
+          className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            color: 'var(--color-text)',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-hover)',
+          }}
+        >
+          {text('分配作业', '分配作业')}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="mb-2 flex flex-wrap items-center gap-1.5 rounded-md px-2 py-1.5"
+      style={{
+        border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
+        background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+      }}
+    >
+      <span className="mr-1 text-[0.7rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        {text('正在酒馆招新', '正在酒馆招新')}
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => { void finishRecruit() }}
+        className="rounded px-2 py-0.5 text-[0.7rem] font-medium disabled:opacity-50"
+        style={{
+          color: 'var(--color-accent-contrast, #fff)',
+          background: 'var(--color-accent)',
+        }}
+      >
+        {text('确定招募', '确定招募')}
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => cancelRecruit()}
+        className="rounded px-2 py-0.5 text-[0.7rem] disabled:opacity-50"
+        style={{
+          color: 'var(--color-text)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        {text('你被炒了', '你被炒了')}
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => restartRecruit()}
+        className="rounded px-2 py-0.5 text-[0.7rem] disabled:opacity-50"
+        style={{
+          color: 'var(--color-text-secondary)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        {text('重新招募', '重新招募')}
+      </button>
+    </div>
+  )
+}
+
+function ComposerFooter() {
+  return (
+    <div
+      className="flex-shrink-0 px-3 pb-3 pt-2"
+      style={{ borderTop: '1px solid var(--color-border)' }}
+    >
+      <RecruitToolbar />
+      <AgentInputBox />
+    </div>
+  )
 }
 
 // ===== 空状态视图 =====
@@ -35,29 +211,23 @@ export default function AgentConversation() {
 function EmptyState() {
   const text = useLocaleStore(s => s.text)
   const { conversations, selectConversation } = useAgentStore()
-  // 取最近 3 条历史会话（不包含当前空会话）
   const recentConvs = conversations
     .filter(c => c && c.messages.length > 0)
     .slice(0, 3)
 
-
-
   return (
     <div className="h-full overflow-y-auto flex flex-col justify-center">
       <div className="px-4 py-6">
-        {/* 标题 */}
         <div className="mb-1 pl-1 text-base font-semibold" style={{ color: 'var(--color-text)' }}>
           {text(APP_BRAND.zhName, APP_BRAND.enName)}
         </div>
-        {/* 副标题 */}
         <div className="mb-3 pl-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          {text('你的 AI 创作助手 — 支持', 'Your AI creative assistant — use')} <code className="px-1 py-0.5 rounded text-[0.68rem]" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-accent)' }}>/</code> {text('命令和', 'commands and')} <code className="px-1 py-0.5 rounded text-[0.68rem]" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-accent)' }}>@</code> {text('引用', 'mentions')}
+          {text('你的 AI 创作助手 — 支持', 'Your AI creative assistant — use')} <code className="px-1 py-0.5 rounded text-[0.68rem]" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-accent)' }}>/</code> {text('命令', 'commands')}
         </div>
 
-        {/* 输入框 */}
+        <RecruitToolbar />
         <AgentInputBox />
 
-        {/* 最近会话（如有） */}
         {recentConvs.length > 0 && (
           <div className="mt-6">
             <div className="flex flex-col gap-0">
@@ -85,11 +255,30 @@ function EmptyState() {
           </div>
         )}
 
-        {/* 底部提示 */}
         <div className="pt-8 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
           {text('AI 生成内容仅供参考，重要信息请自行核实。', 'AI-generated content is for reference only. Verify important information.')}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ===== 酒馆招新临时对话 =====
+
+function RecruitConversation() {
+  const text = useLocaleStore(s => s.text)
+  return (
+    <div className="flex flex-col h-full relative">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="mb-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {text(
+            '答卷不会记入主聊天；确定招募后写入世界书并丢弃答卷。下方仍可切换模型。',
+            '答卷不会记入主聊天；确定招募后写入世界书并丢弃答卷。下方仍可切换模型。',
+          )}
+        </div>
+        <RecruitForm />
+      </div>
+      <ComposerFooter />
     </div>
   )
 }
@@ -103,7 +292,6 @@ function ActiveConversation() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
 
-  // 消息变化时自动滚动到底部
   useEffect(() => {
     if (isAtBottom && scrollRef.current) {
       scrollRef.current.scrollTo({
@@ -113,7 +301,6 @@ function ActiveConversation() {
     }
   }, [activeConv?.messages, generating, isAtBottom])
 
-  // 监听滚动位置判断是否在底部
   const handleScroll = () => {
     const el = scrollRef.current
     if (!el) return
@@ -121,7 +308,6 @@ function ActiveConversation() {
     setIsAtBottom(distanceFromBottom < 60)
   }
 
-  /** 跳转到底部 */
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -133,7 +319,6 @@ function ActiveConversation() {
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* 消息列表滚动区 */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -146,11 +331,9 @@ function ActiveConversation() {
               <AgentMessage key={msg.id} message={msg} />
             ))}
         </div>
-        {/* 底部空间 */}
         <div className="h-4" />
       </div>
 
-      {/* 跳到底部浮动按钮 */}
       {!isAtBottom && (
         <button
           onClick={scrollToBottom}
@@ -176,13 +359,7 @@ function ActiveConversation() {
         </button>
       )}
 
-      {/* 底部输入区（AI 工作流入口暂时隐藏） */}
-      <div
-        className="flex-shrink-0 px-3 pb-3 pt-2"
-        style={{ borderTop: '1px solid var(--color-border)' }}
-      >
-        <AgentInputBox />
-      </div>
+      <ComposerFooter />
     </div>
   )
 }
@@ -193,12 +370,10 @@ function AgentHistoryPanel() {
   const text = useLocaleStore(s => s.text)
   const { conversations, activeConversationId, selectConversation, deleteConversation, setShowHistory } = useAgentStore()
 
-  // 按更新时间倒序排列
   const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
 
   return (
     <div className="flex flex-col h-full">
-      {/* 面板标题 */}
       <div
         className="flex items-center justify-between px-3 py-2 flex-shrink-0"
         style={{ borderBottom: '1px solid var(--color-border)' }}
@@ -217,11 +392,10 @@ function AgentHistoryPanel() {
         </button>
       </div>
 
-      {/* 会话列表 */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {sorted.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            {text('暂无对话记录', 'No conversation history')}
+            {text('暂无对话', 'No conversations yet')}
           </div>
         ) : (
           sorted.map(conv => (
@@ -229,7 +403,7 @@ function AgentHistoryPanel() {
               key={conv.id}
               title={conv.title}
               updatedAt={conv.updatedAt}
-              isActive={conv.id === activeConversationId}
+              active={conv.id === activeConversationId}
               onClick={() => selectConversation(conv.id)}
               onDelete={() => deleteConversation(conv.id)}
             />
@@ -240,61 +414,53 @@ function AgentHistoryPanel() {
   )
 }
 
-// ===== 最近会话列表项 =====
-
 function RecentConversationItem({
   title,
   updatedAt,
-  isActive,
   onClick,
   onDelete,
+  active,
 }: {
   title: string
   updatedAt: number
-  isActive?: boolean
   onClick: () => void
   onDelete: () => void
+  active?: boolean
 }) {
-  const locale = useLocaleStore(s => s.locale)
   const text = useLocaleStore(s => s.text)
   return (
-    <button
-      onClick={onClick}
+    <div
       className="group w-full flex flex-row items-center justify-between overflow-hidden rounded py-1.5 text-left px-2 box-border transition-colors"
-      style={{ backgroundColor: isActive ? 'var(--color-hover)' : 'transparent' }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent' }}
+      style={{
+        backgroundColor: active ? 'var(--color-hover)' : 'transparent',
+      }}
+      onMouseEnter={e => {
+        if (!active) e.currentTarget.style.backgroundColor = 'var(--color-hover)'
+      }}
+      onMouseLeave={e => {
+        if (!active) e.currentTarget.style.backgroundColor = 'transparent'
+      }}
     >
-      {/* 标题 */}
-      <div className="flex items-center gap-x-1 overflow-hidden flex-1 min-w-0">
-        <div
-          className="truncate text-xs"
-          style={{ color: 'var(--color-text)', opacity: isActive ? 1 : 0.65 }}
-        >
+      <button type="button" onClick={onClick} className="flex items-center gap-x-1 overflow-hidden flex-1 min-w-0 text-left">
+        <div className="truncate text-xs" style={{ color: 'var(--color-text)' }}>
           {title}
         </div>
-      </div>
-
-      {/* 右侧：时间 or 删除（纯 CSS group-hover 控制） */}
-      <div className="flex-shrink-0 ml-2">
-        <button
-          onClick={e => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded opacity-50 hover:opacity-100 transition-opacity"
-          style={{ color: 'var(--color-text-secondary)' }}
-          title={text('删除对话', 'Delete conversation')}
-        >
-          <Trash2 size={12} />
-        </button>
-        <span
-          className="group-hover:hidden text-[0.7rem] whitespace-nowrap"
-          style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}
-        >
-          {formatRelativeTime(updatedAt, locale)}
-        </span>
-      </div>
-    </button>
+        <div className="text-[0.65rem] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+          {formatRelativeTime(updatedAt)}
+        </div>
+      </button>
+      <button
+        type="button"
+        title={text('删除对话', 'Delete conversation')}
+        onClick={e => {
+          e.stopPropagation()
+          onDelete()
+        }}
+        className="opacity-0 group-hover:opacity-100 p-1 rounded transition-opacity"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
   )
 }

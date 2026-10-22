@@ -208,8 +208,25 @@ export function stageNavigate(intent: NavigationIntent): void {
   else leaveSettingsThen(() => arrive(intent))
 }
 
+/** 聊天壳下只保留世界书 overlay；舞台写稿 / 运行入口一律回对话。 */
+function inChatShell(): boolean {
+  return Boolean(useProjectStore.getState().currentProject)
+    && useLayoutStore.getState().sidebarView !== 'home'
+}
+
 function arrive(intent: Exclude<NavigationIntent, { kind: 'settings' }>): void {
   enterWork()
+  // 聊天优先产品面：不再打开正文栏、运行轨或舞台资料页（世界书走 overlay）。
+  if (inChatShell()) {
+    if (intent.kind === 'resource' && intent.page === 'worldbook') {
+      useStageStore.setState({ rightRail: 'chat', chatOverlay: 'worldbook', sheet: null })
+      return
+    }
+    if (intent.kind === 'run' || intent.kind === 'stage' || intent.kind === 'chapter' || intent.kind === 'resource') {
+      useStageStore.setState({ rightRail: 'chat', chatOverlay: null, sheet: null })
+      return
+    }
+  }
   // 去别的阶段或资料页是作者新的选择：还在读正文的那一章读完后不再抢回标签。
   if ((intent.kind === 'stage' && intent.stage) || intent.kind === 'resource') openChapterRequest++
   switch (intent.kind) {

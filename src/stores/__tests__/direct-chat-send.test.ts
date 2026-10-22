@@ -74,6 +74,10 @@ describe('direct chat sendMessage', () => {
       generating: false,
       activeRequestId: null,
       toolsInitialized: false,
+      recruitActive: false,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      recruitBusy: false,
     })
     useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
     useLLMStore.setState({
@@ -199,8 +203,8 @@ describe('direct chat sendMessage', () => {
           id: 'wb:system:direct-chat',
           kind: 'rule',
           title: '系统提示',
-          content: '自定义直连身份，请提醒用户使用写本章。',
-          promptContent: '自定义直连身份，请提醒用户使用写本章。',
+          content: '自定义直连身份，专注对话构思与润色。',
+          promptContent: '自定义直连身份，专注对话构思与润色。',
           activation: {
             primaryKeys: [],
             secondaryKeys: [],
@@ -233,8 +237,8 @@ describe('direct chat sendMessage', () => {
     await useAgentStore.getState().sendMessage('覆盖测试')
 
     const system = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages[0]?.content
-    expect(system).toBe('自定义直连身份，请提醒用户使用写本章。')
-    expect(system).toContain('写本章')
+    expect(system).toBe('自定义直连身份，专注对话构思与润色。')
+    expect(system).toContain('专注对话')
     expect(system).not.toContain('简短梳理')
     expect(system).not.toContain('直接简洁作答')
   })
@@ -272,10 +276,15 @@ describe('direct chat sendMessage', () => {
       2,
       'C:\\novels\\demo',
     )
-    const messages = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages
+    const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    const messages = last?.requestDebug?.messages
     expect(messages?.[1]?.role).toBe('system')
     expect(messages?.[1]?.content).toContain('【已定稿前文】')
     expect(messages?.[1]?.content).toContain('雨夜里他错过了末班车。')
+    expect(last?.contextReceipt).toEqual({
+      worldbookTitles: [],
+      continuityChapters: [{ chapterNumber: 1, chapterTitle: '开端' }],
+    })
     expect(generateStream.mock.calls[0][0]).toEqual(messages)
   })
 
@@ -290,9 +299,11 @@ describe('direct chat sendMessage', () => {
     await useAgentStore.getState().sendMessage('闲聊')
 
     expect(invokeWithProjectSession).not.toHaveBeenCalled()
-    const messages = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages ?? []
+    const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    const messages = last?.requestDebug?.messages ?? []
     expect(messages.filter(m => m.role === 'system')).toHaveLength(1)
     expect(messages.some(m => m.content.includes('已定稿前文'))).toBe(false)
+    expect(last?.contextReceipt).toBeUndefined()
   })
 
   it('injects matched worldbook entries into llmMessages and requestDebug', async () => {
@@ -337,6 +348,10 @@ describe('direct chat sendMessage', () => {
     const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
     const messages = last?.requestDebug?.messages ?? []
     expect(last?.requestDebug?.meta.worldbookCount).toBe(1)
+    expect(last?.contextReceipt).toEqual({
+      worldbookTitles: ['灯塔守则'],
+      continuityChapters: [],
+    })
     expect(messages.some(m => m.role === 'system' && m.content.includes('【世界书】'))).toBe(true)
     expect(messages.some(m => m.content.includes('雾钟提前一刻响起。'))).toBe(true)
     expect(generateStream.mock.calls[0][0]).toEqual(messages)
@@ -495,6 +510,10 @@ describe('agent chat hydrateFromProject', () => {
       generating: false,
       activeRequestId: null,
       toolsInitialized: false,
+      recruitActive: false,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      recruitBusy: false,
     })
     useProjectStore.setState({ currentProject: null })
     invokeWithProjectSession.mockReset()
@@ -573,15 +592,33 @@ describe('formatDirectChatWorldbook', () => {
 
 describe('formatDirectChatContinuity', () => {
   it('formats chapter notes and keeps nearer chapters under budget', () => {
-    const block = formatDirectChatContinuity([
+    const result = formatDirectChatContinuity([
       { draftId: 1, chapterNumber: 1, chapterTitle: '开端', chapterNotes: '他错过了末班车。' },
       { draftId: 2, chapterNumber: 2, chapterTitle: '追寻', chapterNotes: '他找到了线索。', facts: [{ category: 'plot', entities: [], statement: '线索在旧站台。', sourceChapter: 2, evidence: '' }] },
     ])
-    expect(block).toContain('【已定稿前文】')
-    expect(block).toContain('第1章「开端」')
-    expect(block).toContain('他错过了末班车。')
-    expect(block).toContain('第2章「追寻」')
-    expect(block).toContain('· 线索在旧站台。')
+    expect(result?.block).toContain('【已定稿前文】')
+    expect(result?.block).toContain('第1章「开端」')
+    expect(result?.block).toContain('他错过了末班车。')
+    expect(result?.block).toContain('第2章「追寻」')
+    expect(result?.block).toContain('· 线索在旧站台。')
+    expect(result?.chapters).toEqual([
+      { chapterNumber: 1, chapterTitle: '开端' },
+      { chapterNumber: 2, chapterTitle: '追寻' },
+    ])
+  })
+
+  it('drops earliest chapters from receipt when over budget', () => {
+    const longNotes = '剧情要点。'.repeat(400)
+    const result = formatDirectChatContinuity(
+      [
+        { draftId: 1, chapterNumber: 1, chapterTitle: '远章', chapterNotes: longNotes },
+        { draftId: 2, chapterNumber: 2, chapterTitle: '近章', chapterNotes: longNotes },
+      ],
+      900,
+    )
+    expect(result?.chapters).toEqual([{ chapterNumber: 2, chapterTitle: '近章' }])
+    expect(result?.block).toContain('第2章「近章」')
+    expect(result?.block).not.toContain('第1章「远章」')
   })
 })
 
@@ -589,8 +626,9 @@ describe('buildDirectChatSystemPrompt', () => {
   it('keeps builtin identity semantics without tool_call XML or mode tones', async () => {
     const prompt = await buildDirectChatSystemPrompt({ writingLanguage: 'zh-CN' })
     expect(prompt).not.toMatch(/<\/?tool_call>/i)
-    expect(prompt).toContain('写本章')
     expect(prompt).toContain('写作助手')
+    expect(prompt).toContain('构思')
+    expect(prompt).not.toContain('写本章')
     expect(prompt).not.toContain('简短梳理')
     expect(prompt).not.toContain('直接简洁作答')
   })

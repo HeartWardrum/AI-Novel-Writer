@@ -76,4 +76,32 @@ describe('agent chat repository', () => {
     AgentChatRepository.clearAll()
     expect(AgentChatRepository.load()).toEqual({ conversations: [], activeConversationId: null })
   })
+
+  it('persists lightweight contextReceipt on assistant messages', () => {
+    const now = Date.now()
+    AgentChatRepository.upsert(conversation({
+      messages: [
+        { id: 'u1', role: 'user', content: '说说林晚', createdAt: now },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '她站在青云城门外。',
+          createdAt: now + 1,
+          contextReceipt: {
+            worldbookTitles: ['林晚', '青云城'],
+            continuityChapters: [{ chapterNumber: 10, chapterTitle: '潮汐' }],
+          },
+        },
+      ],
+    }))
+
+    const loaded = AgentChatRepository.load().conversations[0]
+    expect(loaded.messages[1]).toMatchObject({
+      id: 'a1',
+      contextReceipt: {
+        worldbookTitles: ['林晚', '青云城'],
+        continuityChapters: [{ chapterNumber: 10, chapterTitle: '潮汐' }],
+      },
+    })
+  })
 })

@@ -87,4 +87,34 @@ describe('AgentMessage copy action', () => {
     expect(container.textContent).toContain('写一篇捉鬼小说')
     expect(container.textContent).toContain('模型: model-a')
   })
+
+  it('shows context receipt hint above assistant content', async () => {
+    useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
+    await act(async () => root.render(<AgentMessage message={{
+      id: 'assistant-receipt',
+      role: 'assistant',
+      content: '雾钟提前一刻响起。',
+      createdAt: 1,
+      contextReceipt: {
+        worldbookTitles: ['林晚', '青云城'],
+        continuityChapters: [{ chapterNumber: 10 }, { chapterNumber: 11 }],
+      },
+    }} />))
+
+    expect(container.textContent).toContain('本轮已带入：林晚、青云城；前文：第 10、11 章')
+    expect(container.querySelector('[data-testid="agent-context-receipt"]')).not.toBeNull()
+  })
+
+  it('hides context receipt when missing', async () => {
+    useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
+    await act(async () => root.render(<AgentMessage message={{
+      id: 'assistant-plain',
+      role: 'assistant',
+      content: '普通回复',
+      createdAt: 1,
+    }} />))
+
+    expect(container.textContent).not.toContain('本轮已带入')
+    expect(container.querySelector('[data-testid="agent-context-receipt"]')).toBeNull()
+  })
 })

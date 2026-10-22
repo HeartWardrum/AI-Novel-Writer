@@ -19,6 +19,7 @@ export const SETTINGS_GROUPS: readonly { id: string; name: Pair; pages: readonly
     { id: 'proxy', name: ['网络代理', 'Network proxy'], lede: ['连接模型服务需要经过代理时在这里设置，所有 AI 请求都会走它。', 'Set this when model services must be reached through a proxy. Every AI request goes through it.'] },
     { id: 'prompts', name: ['提示词模板', 'Prompt templates'], lede: ['调整 AI 在每个创作环节收到的指导。可以只改这部作品，也可以改成全局默认。', 'Adjust the guidance AI receives at each writing step, for this book or as the global default.'] },
     { id: 'skills', name: ['写作 Skills', 'Writing skills'], lede: ['安装提示词型的写作 Skill，并绑定到创作阶段。安装前会先让你检查内容。', 'Install prompt-only writing skills and bind them to writing stages. You review each one before installing.'] },
+    { id: 'recruit', name: ['酒馆招新', '酒馆招新'], lede: ['招新表单的题干、选项与题目数量。确定入库与推荐三人的 AI 文案在「提示词模板」里改。', '招新表单的题干、选项与题目数量。确定入库与推荐三人的 AI 文案在「提示词模板」里改。'] },
   ] },
   { id: 'other', name: ['其他', 'Other'], pages: [
     { id: 'backup', name: ['项目备份', 'Project backup'], lede: ['把作品打包存到本机，或备份到你绑定的云端。恢复时总是另存为一份新的作品副本。', 'Archive the book locally or to a cloud you connect. Restoring always creates a new copy.'] },

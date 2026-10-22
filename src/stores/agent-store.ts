@@ -11,9 +11,34 @@ import {
   parseSlashCommand,
 } from '../services/agent/intent-router'
 import type { ToolArtifact } from '../services/agent/tool-registry'
+import {
+  buildHomeworkPrompt,
+  ensureHomeworkCharacters,
+  loadHomeworkInputs,
+  saveCharacterPrivateHomework,
+  type AssignHomeworkProgress,
+} from '../services/agent/assign-worldbook-homework'
 import { loadDirectChatContinuity } from '../services/agent/direct-chat-continuity'
-import { buildDirectChatSystemPrompt } from '../services/agent/direct-chat-prompt'
 import { loadDirectChatWorldbook } from '../services/agent/direct-chat-worldbook'
+import { buildDirectChatSystemPrompt } from '../services/agent/direct-chat-prompt'
+import {
+  answersFromRecommendation,
+  buildCardFromAnswers,
+  buildRecruitWorldbookSaveRequest,
+  parseRecruitCharacterCard,
+  parseRecruitRecommendations,
+  type RecruitRecommendation,
+} from '../services/agent/recruit-character'
+import { getBuiltinPromptTemplate } from '../services/builtin-prompt-templates'
+import { renderPrompt, resolvePromptTemplate } from '../services/prompt-templates'
+import { saveWorldbookEntry } from '../services/worldbook-service'
+import { toast } from '../components/ui/Toast'
+import {
+  formatRecruitAnswersForPrompt,
+  type RecruitAnswer,
+  type RecruitAnswers,
+} from '../shared/recruit-questionnaire'
+import { getSavedRecruitQuestionnaire } from './recruit-questionnaire-store'
 import {
   clearAgentChat,
   deleteAgentConversation,
@@ -22,7 +47,12 @@ import {
   upsertAgentConversation,
 } from '../services/agent-chat-service'
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
-import type { PersistedAgentConversation, PersistedAgentMessage } from '../shared/agent-chat'
+import {
+  buildAgentContextReceipt,
+  type AgentContextReceipt,
+  type PersistedAgentConversation,
+  type PersistedAgentMessage,
+} from '../shared/agent-chat'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../shared/project-session-context'
 import { resolveWritingLanguage, writingLanguageText } from '../shared/writing-language'
@@ -71,6 +101,8 @@ export interface AgentMessage {
   artifacts?: ToolArtifact[]
   /** 本轮请求上下文（调试用） */
   requestDebug?: AgentRequestDebug
+  /** 本轮实际注入的世界书/前文回执（轻量，可落盘） */
+  contextReceipt?: AgentContextReceipt
 }
 
 /** 单个会话 */
@@ -100,6 +132,16 @@ interface AgentState {
   activeRequestId: string | null
   /** Tool 系统是否已初始化 */
   toolsInitialized: boolean
+  /** 酒馆招新：表单进行中（答卷不进主会话） */
+  recruitActive: boolean
+  /** 酒馆招新答卷 */
+  recruitAnswers: RecruitAnswers
+  /** 推荐三人结果 */
+  recruitRecommendations: RecruitRecommendation[]
+  /** 招新 AI 进行中（确定/推荐） */
+  recruitBusy: boolean
+  /** 分配作业进度（串行给人物写私有认知） */
+  assignHomework: AssignHomeworkProgress
 
   // ===== 计算属性（Getters） =====
   /** 获取当前活跃会话 */
@@ -136,6 +178,24 @@ interface AgentState {
     recoveryHandle?: MainGenerationRunHandle,
     options?: { editUserMessageId?: string },
   ) => Promise<void>
+  /** 酒馆招新：打开表单（不调 AI） */
+  startRecruit: () => void
+  /** 酒馆招新：取消（你被炒了） */
+  cancelRecruit: () => void
+  /** 酒馆招新：清空答卷重来 */
+  restartRecruit: () => void
+  /** 更新某一题答案 */
+  setRecruitAnswer: (questionId: string, answer: RecruitAnswer | null) => void
+  /** 按本书推荐三人 */
+  recommendRecruit: () => Promise<void>
+  /** 选用推荐并预填表单 */
+  applyRecruitRecommendation: (index: number) => void
+  /** 酒馆招新：整理人物并写入世界书（确定招募） */
+  finishRecruit: () => Promise<void>
+  /** 分配作业：逐人把通用设定提炼进私有认知 */
+  startAssignHomework: () => Promise<void>
+  /** 取消后续人物的作业分配（已写入的保留） */
+  cancelAssignHomework: () => void
   /** Explicitly recover the original Agent turn, including its durable tool calls. */
   resumeGeneration: (handle: MainGenerationRunHandle) => Promise<void>
   /** 取消当前生成 */
@@ -152,6 +212,50 @@ interface AgentState {
 
 /** 生成唯一 ID */
 const genId = () => crypto.randomUUID()
+
+/** 与输入框模型下拉一致：当前会话 modelId → 全局默认 */
+function resolveChatModelId(get: () => AgentState): string | undefined {
+  return get().getActiveConversation()?.modelId
+    ?? useLLMStore.getState().defaultModelId
+    ?? undefined
+}
+
+/** 招新确定/推荐：单次非展示流式生成，收集全文。 */
+async function generateRecruitTextOnce(
+  llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  modelId: string,
+): Promise<string> {
+  const requestId = genId()
+  const abortController = new AbortController()
+  activeAbortController = abortController
+  activeStreamRequestId = null
+  activeRequestUiLocale = useLocaleStore.getState().locale
+  useAgentStore.setState({ generating: true, activeRequestId: requestId, recruitBusy: true })
+
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      void useLLMStore.getState().generateStream(
+        llmMessages,
+        {
+          onChunk: () => undefined,
+          onDone: (fullText) => resolve(fullText ?? ''),
+          onError: () => reject(new Error('RECRUIT_GENERATE_FAILED')),
+        },
+        modelId,
+        { purpose: 'generation', reasoningStage: 'planning' },
+      ).then(streamId => {
+        if (useAgentStore.getState().activeRequestId === requestId) {
+          activeStreamRequestId = streamId
+        }
+      }).catch(reject)
+    })
+  } finally {
+    if (activeAbortController === abortController) activeAbortController = null
+    activeStreamRequestId = null
+    activeRequestUiLocale = null
+    useAgentStore.setState({ generating: false, activeRequestId: null, recruitBusy: false })
+  }
+}
 
 /** 从消息内容生成会话标题 */
 const generateTitle = (content: string): string => {
@@ -170,12 +274,6 @@ const generateHelpText = (locale: Locale): string => {
     ...commands
       .filter(command => command.source === 'builtin_command')
       .map(command => `- \`/${command.name}\` — ${command.description}`),
-    '',
-    text('### 写进作品', '### Writing into the manuscript'),
-    text(
-      '对话只用于构思与讨论。要把助手正文写进作品，请用右栏的「写本章」。',
-      '对话只用于构思与讨论。要把助手正文写进作品，请用右栏的「写本章」。',
-    ),
     '',
     text('有任何创作问题，直接问我即可！', 'Ask me whenever you need help with your story.'),
   ]
@@ -223,6 +321,7 @@ function toPersistedConversation(conversation: AgentConversation): PersistedAgen
         }
         if (message.toolCalls) next.toolCalls = message.toolCalls
         if (message.artifacts) next.artifacts = message.artifacts
+        if (message.contextReceipt) next.contextReceipt = message.contextReceipt
         return next
       }),
   }
@@ -242,6 +341,7 @@ function fromPersistedConversation(conversation: PersistedAgentConversation): Ag
       createdAt: message.createdAt,
       ...(message.toolCalls ? { toolCalls: message.toolCalls as AgentMessage['toolCalls'] } : {}),
       ...(message.artifacts ? { artifacts: message.artifacts as AgentMessage['artifacts'] } : {}),
+      ...(message.contextReceipt ? { contextReceipt: message.contextReceipt } : {}),
     })),
   }
 }
@@ -277,6 +377,18 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   generating: false,
   activeRequestId: null,
   toolsInitialized: false,
+  recruitActive: false,
+  recruitAnswers: {},
+  recruitRecommendations: [],
+  recruitBusy: false,
+  assignHomework: {
+    active: false,
+    index: 0,
+    total: 0,
+    currentTitle: '',
+    cancelled: false,
+    phase: 'idle',
+  },
 
   getActiveConversation: () => {
     const { conversations, activeConversationId } = get()
@@ -330,7 +442,25 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   },
 
   clearAll: (options) => {
-    set({ conversations: [], activeConversationId: null, showHistory: false, generating: false, activeRequestId: null })
+    set({
+      conversations: [],
+      activeConversationId: null,
+      showHistory: false,
+      generating: false,
+      activeRequestId: null,
+      recruitActive: false,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      recruitBusy: false,
+      assignHomework: {
+        active: false,
+        index: 0,
+        total: 0,
+        currentTitle: '',
+        cancelled: false,
+        phase: 'idle',
+      },
+    })
     if (options?.persist === false) {
       hydratedSessionKey = null
       return
@@ -350,6 +480,18 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       showHistory: false,
       generating: false,
       activeRequestId: null,
+      recruitActive: false,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      recruitBusy: false,
+      assignHomework: {
+        active: false,
+        index: 0,
+        total: 0,
+        currentTitle: '',
+        cancelled: false,
+        phase: 'idle',
+      },
     })
     try {
       const loaded = await loadAgentChat(session)
@@ -433,14 +575,358 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     await get().sendMessage(content, undefined, { editUserMessageId: messageId })
   },
 
+  startRecruit: () => {
+    if (get().generating || get().recruitBusy || get().assignHomework.active) return
+    if (get().recruitActive) return
+    if (!get().getActiveConversation()) get().createConversation()
+    set({
+      recruitActive: true,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      showHistory: false,
+    })
+  },
+
+  cancelAssignHomework: () => {
+    set(state => ({
+      assignHomework: state.assignHomework.active
+        ? { ...state.assignHomework, cancelled: true }
+        : state.assignHomework,
+    }))
+  },
+
+  startAssignHomework: async () => {
+    const text = useLocaleStore.getState().text
+    if (get().recruitActive || get().generating || get().recruitBusy || get().assignHomework.active) return
+    const project = useProjectStore.getState().currentProject
+    const session = projectSessionContextFromProject(project)
+    if (!session) {
+      toast.error(text('请先打开作品', '请先打开作品'))
+      return
+    }
+    const modelId = useLLMStore.getState().defaultModelId
+      ?? get().getActiveConversation()?.modelId
+      ?? null
+    if (!modelId) {
+      toast.error(text('先在设置里配置生成模型', '先在设置里配置生成模型'))
+      return
+    }
+
+    set({
+      assignHomework: {
+        active: true,
+        index: 0,
+        total: 1,
+        currentTitle: text('正在准备人物…', '正在准备人物…'),
+        cancelled: false,
+        phase: 'preparing',
+      },
+    })
+
+    let characters
+    let sharedCorpus: string
+    try {
+      const loaded = await loadHomeworkInputs(session)
+      sharedCorpus = loaded.sharedCorpus
+      characters = loaded.characters
+      if (characters.length === 0) {
+        if (get().assignHomework.cancelled) {
+          set({
+            assignHomework: {
+              active: false, index: 0, total: 0, currentTitle: '', cancelled: false, phase: 'idle',
+            },
+          })
+          return
+        }
+        set(state => ({
+          assignHomework: {
+            ...state.assignHomework,
+            currentTitle: text('正在识别并创建人物…', '正在识别并创建人物…'),
+            phase: 'preparing',
+          },
+        }))
+        const config = project?.novelConfig
+        const extraHints = [
+          config?.protagonistProfile && `主角设定：\n${config.protagonistProfile}`,
+          config?.coreOutline && `核心大纲：\n${config.coreOutline}`,
+          config?.worldSetting && `世界观：\n${config.worldSetting}`,
+          config?.synopsis && `情节大纲：\n${config.synopsis}`,
+          config?.premise && `故事前提：\n${config.premise}`,
+        ].filter(Boolean).join('\n\n')
+        const ensured = await ensureHomeworkCharacters({
+          session,
+          sharedCorpus,
+          sources: loaded.sources,
+          extraHints,
+          generate: async messages => useLLMStore.getState().generate(messages, modelId, {
+            purpose: 'worldbook-homework-discover',
+            projectSession: session,
+            reasoningStage: 'planning',
+            responseFormat: { type: 'json_object' },
+          }),
+        })
+        characters = ensured.characters
+        if (ensured.importedCount > 0 || ensured.createdCount > 0) {
+          toast.info(text(
+            `已准备 ${ensured.importedCount + ensured.createdCount} 名人物（导入 ${ensured.importedCount} / 新建 ${ensured.createdCount}）`,
+            `已准备 ${ensured.importedCount + ensured.createdCount} 名人物（导入 ${ensured.importedCount} / 新建 ${ensured.createdCount}）`,
+          ))
+        }
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      set({
+        assignHomework: {
+          active: false, index: 0, total: 0, currentTitle: '', cancelled: false, phase: 'idle',
+        },
+      })
+      return
+    }
+
+    if (characters.length === 0) {
+      toast.error(text(
+        '没找到可分配的人物。请先在设定页填写主角/人物，或去酒馆招新后再试。',
+        '没找到可分配的人物。请先在设定页填写主角/人物，或去酒馆招新后再试。',
+      ))
+      set({
+        assignHomework: {
+          active: false, index: 0, total: 0, currentTitle: '', cancelled: false, phase: 'idle',
+        },
+      })
+      return
+    }
+
+    if (get().assignHomework.cancelled) {
+      set({
+        assignHomework: {
+          active: false, index: 0, total: 0, currentTitle: '', cancelled: false, phase: 'idle',
+        },
+      })
+      return
+    }
+
+    set({
+      assignHomework: {
+        active: true,
+        index: 0,
+        total: characters.length,
+        currentTitle: characters[0]?.title ?? '',
+        cancelled: false,
+        phase: 'learning',
+      },
+    })
+
+    let completed = 0
+    try {
+      for (let index = 0; index < characters.length; index += 1) {
+        if (get().assignHomework.cancelled) break
+        const character = characters[index]
+        set({
+          assignHomework: {
+            active: true,
+            index,
+            total: characters.length,
+            currentTitle: character.title,
+            cancelled: false,
+            phase: 'learning',
+          },
+        })
+        const messages = buildHomeworkPrompt({
+          characterTitle: character.title,
+          publicPersona: character.content,
+          sharedCorpus,
+        })
+        const response = await useLLMStore.getState().generate(messages, modelId, {
+          purpose: 'worldbook-homework',
+          projectSession: session,
+          reasoningStage: 'planning',
+        })
+        if (get().assignHomework.cancelled) break
+        const privateContent = response.content.trim()
+        if (!privateContent) {
+          toast.error(text(`「${character.title}」没有写出内容，已跳过`, `「${character.title}」没有写出内容，已跳过`))
+          continue
+        }
+        await saveCharacterPrivateHomework(session, character, privateContent)
+        completed += 1
+      }
+      if (get().assignHomework.cancelled) {
+        toast.info(text(
+          `已中止；完成 ${completed}/${characters.length} 人`,
+          `已中止；完成 ${completed}/${characters.length} 人`,
+        ))
+      } else {
+        toast.success(text('作业分配完成', '作业分配完成'))
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      set({
+        assignHomework: {
+          active: false,
+          index: 0,
+          total: 0,
+          currentTitle: '',
+          cancelled: false,
+          phase: 'idle',
+        },
+      })
+    }
+  },
+
+  cancelRecruit: () => {
+    if (get().generating || get().recruitBusy) {
+      void get().cancelGeneration()
+    }
+    set({
+      recruitActive: false,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+      recruitBusy: false,
+    })
+  },
+
+  restartRecruit: () => {
+    if (get().generating || get().recruitBusy) return
+    set({
+      recruitActive: true,
+      recruitAnswers: {},
+      recruitRecommendations: [],
+    })
+  },
+
+  setRecruitAnswer: (questionId, answer) => {
+    if (!get().recruitActive) return
+    set(state => {
+      const next = { ...state.recruitAnswers }
+      if (answer == null) delete next[questionId]
+      else next[questionId] = answer
+      return { recruitAnswers: next }
+    })
+  },
+
+  applyRecruitRecommendation: (index) => {
+    const recommendation = get().recruitRecommendations[index]
+    if (!recommendation) return
+    const questions = getSavedRecruitQuestionnaire().questions
+    set({
+      recruitAnswers: answersFromRecommendation(questions, recommendation),
+    })
+  },
+
+  recommendRecruit: async () => {
+    if (!get().recruitActive || get().generating || get().recruitBusy) return
+    const locale = useLocaleStore.getState().locale
+    const text = (zh: string, en: string) => (locale === 'en-US' ? en : zh)
+    const modelId = resolveChatModelId(get)
+    if (!modelId) {
+      toast.error(text('请先在输入框上方选择模型。', '请先在输入框上方选择模型。'))
+      return
+    }
+    const project = useProjectStore.getState().currentProject
+    const projectSession = projectSessionContextFromProject(project)
+    if (!projectSession) {
+      toast.error(text('请先打开作品。', '请先打开作品。'))
+      return
+    }
+    const writingLanguage = resolveWritingLanguage(project?.novelConfig.writingLanguage)
+    try {
+      const recommendTemplate = await resolvePromptTemplate('recruit_recommend', projectSession, writingLanguage)
+        ?? getBuiltinPromptTemplate('recruit_recommend', writingLanguage)
+      if (!recommendTemplate) throw new Error('RECRUIT_RECOMMEND_TEMPLATE_MISSING')
+      const worldbook = await loadDirectChatWorldbook({
+        projectSession,
+        userText: '人物 角色 配角 关系',
+      })
+      const context = worldbook?.block
+        ?? text('（暂无世界书命中，请根据一般网文配角需求推荐）', '（暂无世界书命中，请根据一般网文配角需求推荐）')
+      const userContent = renderPrompt(recommendTemplate, { context }, writingLanguage)
+      const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        {
+          role: 'system',
+          content: recommendTemplate.systemRole
+            ?? text('你是小说人物设定助手。', '你是小说人物设定助手。'),
+        },
+        { role: 'user', content: userContent },
+      ]
+      const raw = await generateRecruitTextOnce(llmMessages, modelId)
+      const list = parseRecruitRecommendations(raw)
+      if (list.length === 0) {
+        toast.error(text('没能解析出推荐人选，请重试。', '没能解析出推荐人选，请重试。'))
+        return
+      }
+      set({ recruitRecommendations: list })
+      toast.success(text(`已推荐 ${list.length} 人，点选可预填表单`, `已推荐 ${list.length} 人，点选可预填表单`))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      toast.error(text(`推荐失败：${reason}`, `推荐失败：${reason}`))
+      set({ recruitBusy: false, generating: false, activeRequestId: null })
+    }
+  },
+
+  finishRecruit: async () => {
+    if (!get().recruitActive || get().generating || get().recruitBusy) return
+    const locale = useLocaleStore.getState().locale
+    const text = (zh: string, en: string) => (locale === 'en-US' ? en : zh)
+    const questions = getSavedRecruitQuestionnaire().questions
+    const answers = get().recruitAnswers
+    const fallback = buildCardFromAnswers(questions, answers)
+
+    const modelId = resolveChatModelId(get)
+    if (!modelId) {
+      toast.error(text('请先在输入框上方选择模型。', '请先在输入框上方选择模型。'))
+      return
+    }
+    const project = useProjectStore.getState().currentProject
+    const projectSession = projectSessionContextFromProject(project)
+    if (!projectSession) {
+      toast.error(text('请先打开作品。', '请先打开作品。'))
+      return
+    }
+    const writingLanguage = resolveWritingLanguage(project?.novelConfig.writingLanguage)
+
+    try {
+      const finalizeTemplate = await resolvePromptTemplate('recruit_finalize', projectSession, writingLanguage)
+        ?? getBuiltinPromptTemplate('recruit_finalize', writingLanguage)
+      if (!finalizeTemplate) throw new Error('RECRUIT_FINALIZE_TEMPLATE_MISSING')
+      const answersText = formatRecruitAnswersForPrompt(questions, answers)
+      const userContent = renderPrompt(finalizeTemplate, { answers: answersText }, writingLanguage)
+      const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        {
+          role: 'system',
+          content: finalizeTemplate.systemRole
+            ?? text('你是小说人物设定助手。', '你是小说人物设定助手。'),
+        },
+        { role: 'user', content: userContent },
+      ]
+      const raw = await generateRecruitTextOnce(llmMessages, modelId)
+      const card = parseRecruitCharacterCard(raw, fallback.name) ?? fallback
+      await saveWorldbookEntry(projectSession, buildRecruitWorldbookSaveRequest(card))
+      toast.success(text(`已招募「${card.name}」进世界书`, `已招募「${card.name}」进世界书`))
+      set({
+        recruitActive: false,
+        recruitAnswers: {},
+        recruitRecommendations: [],
+        recruitBusy: false,
+      })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      toast.error(text(`写入世界书失败：${reason}`, `写入世界书失败：${reason}`))
+      set({ recruitBusy: false, generating: false, activeRequestId: null })
+    }
+  },
+
   sendMessage: async (content, recoveryHandle, options) => {
     // 直连对话不再恢复 Agent Generation 托管轮次
     if (recoveryHandle) return
     if (!content.trim() || get().generating) return
+    // 招新表单期间禁止往主会话/招新闲聊发消息
+    if (get().recruitActive) return
 
     const editUserMessageId = options?.editUserMessageId
     let requestLocale = useLocaleStore.getState().locale
     const text = (zhCNText: string, enUSText: string) => requestLocale === 'en-US' ? enUSText : zhCNText
+
     let skillInvocation: { skill: LoadedSkill; input: string } | null = null
     let messageContent = content
 
@@ -623,7 +1109,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       })
       const editor = useEditorStore.getState()
       const activeChapterNumber = editor.tabs.find(tab => tab.id === editor.activeTabId)?.chapterNumber
-      const continuityBlock = await loadDirectChatContinuity({
+      const continuity = await loadDirectChatContinuity({
         projectSession,
         chapterNumber: activeChapterNumber,
       })
@@ -633,7 +1119,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       })
       const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
         { role: 'system', content: systemPrompt },
-        ...(continuityBlock ? [{ role: 'system' as const, content: continuityBlock }] : []),
+        ...(continuity ? [{ role: 'system' as const, content: continuity.block }] : []),
         ...(worldbook ? [{ role: 'system' as const, content: worldbook.block }] : []),
         ...historyMessages,
         { role: 'user', content: userMsg.content },
@@ -654,7 +1140,17 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           ...(worldbook ? { worldbookCount: worldbook.result.selections.length } : {}),
         },
       }
-      updateAssistantMsg(m => ({ ...m, requestDebug }))
+      const contextReceipt = buildAgentContextReceipt({
+        worldbookTitles: worldbook?.result.selections.map(
+          item => item.title.trim() || item.entryId,
+        ),
+        continuityChapters: continuity?.chapters,
+      })
+      updateAssistantMsg(m => ({
+        ...m,
+        requestDebug,
+        ...(contextReceipt ? { contextReceipt } : {}),
+      }))
 
       if (abortController.signal.aborted) {
         finishIdle()
@@ -766,6 +1262,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           m.streaming ? { ...m, streaming: false, content: m.content + stoppedText } : m
         ),
       })),
+      recruitBusy: false,
     }))
     activeRequestUiLocale = null
     if (activeId) void persistConversationById(activeId).then(() => persistActiveMeta())

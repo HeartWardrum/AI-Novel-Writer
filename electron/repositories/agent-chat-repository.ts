@@ -1,6 +1,7 @@
 import { getProjectDb } from '../database'
 import type {
   AgentChatLoadResult,
+  AgentContextReceipt,
   PersistedAgentConversation,
   PersistedAgentMessage,
 } from '../../src/shared/agent-chat'
@@ -12,6 +13,23 @@ interface ConversationRow {
   messages_json: string
   created_at: number
   updated_at: number
+}
+
+function parseContextReceipt(raw: unknown): AgentContextReceipt | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const row = raw as Record<string, unknown>
+  if (!Array.isArray(row.worldbookTitles) || !Array.isArray(row.continuityChapters)) return undefined
+  const worldbookTitles = row.worldbookTitles.filter((title): title is string => typeof title === 'string')
+  const continuityChapters = row.continuityChapters.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const chapter = item as Record<string, unknown>
+    if (typeof chapter.chapterNumber !== 'number' || !Number.isFinite(chapter.chapterNumber)) return []
+    const title = typeof chapter.chapterTitle === 'string' ? chapter.chapterTitle : undefined
+    return title
+      ? [{ chapterNumber: chapter.chapterNumber, chapterTitle: title }]
+      : [{ chapterNumber: chapter.chapterNumber }]
+  })
+  return { worldbookTitles, continuityChapters }
 }
 
 function parseMessages(raw: string): PersistedAgentMessage[] {
@@ -31,6 +49,8 @@ function parseMessages(raw: string): PersistedAgentMessage[] {
       }
       if ('toolCalls' in row) message.toolCalls = row.toolCalls
       if ('artifacts' in row) message.artifacts = row.artifacts
+      const contextReceipt = parseContextReceipt(row.contextReceipt)
+      if (contextReceipt) message.contextReceipt = contextReceipt
       return [message]
     })
   } catch {
@@ -59,6 +79,7 @@ function serializeMessages(messages: readonly PersistedAgentMessage[]): string {
     }
     if (message.toolCalls !== undefined) next.toolCalls = message.toolCalls
     if (message.artifacts !== undefined) next.artifacts = message.artifacts
+    if (message.contextReceipt !== undefined) next.contextReceipt = message.contextReceipt
     return next
   }))
 }
