@@ -71,6 +71,9 @@ export interface PersistedAgentMessage {
   contextReceipt?: AgentContextReceipt
 }
 
+/** 直连对话模式：作者助手 vs 扮演人物。 */
+export type AgentChatMode = 'author' | 'character'
+
 /** 落盘用的整段会话。 */
 export interface PersistedAgentConversation {
   id: string
@@ -79,6 +82,12 @@ export interface PersistedAgentConversation {
   messages: PersistedAgentMessage[]
   createdAt: number
   updatedAt: number
+  /** 缺省视为 author */
+  chatMode?: AgentChatMode
+  /** 角色模式下选中的世界书人物条目 id */
+  characterEntryId?: string | null
+  /** 会话焦点章号（续写本章用）；缺省 1 */
+  focusChapterNumber?: number
 }
 
 export interface AgentChatLoadResult {

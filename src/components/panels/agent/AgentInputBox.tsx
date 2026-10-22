@@ -15,7 +15,10 @@ import SlashCommandMenu from './SlashCommandMenu'
 import type { SlashCommand } from '../../../services/agent/intent-router'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
+import { projectSessionContextFromProject } from '../../../shared/project-session-context'
+import { listWorldbookEntries } from '../../../services/worldbook-service'
 import { registerProjectTransitionDraft } from '../../../services/project-transition'
+import { registerAgentComposer } from '../../../services/agent/agent-composer-bridge'
 
 /** 输入框最大高度（px），超出后框内滚动 */
 const MAX_HEIGHT = 200
@@ -35,15 +38,47 @@ export default function AgentInputBox() {
     ? (projectInputs.get(projectKey) ?? projectInputDrafts.get(projectKey)?.value ?? '')
     : ''
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { generating, sendMessage, cancelGeneration, getActiveConversation, setModelId } = useAgentStore()
+  const generating = useAgentStore(s => s.generating)
+  const sendMessage = useAgentStore(s => s.sendMessage)
+  const cancelGeneration = useAgentStore(s => s.cancelGeneration)
+  const setModelId = useAgentStore(s => s.setModelId)
+  /** 直接从 conversations 取值，避免 getActiveConversation() 导致选型后不刷新 */
+  const activeConv = useAgentStore(s => {
+    const id = s.activeConversationId
+    return id ? (s.conversations.find(c => c.id === id) ?? null) : null
+  })
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
 
   // 过滤出非仅限 embedding 专用的模型
   const chatModels = models.filter(m => !(m.purposes.length === 1 && m.purposes[0] === 'embedding'))
 
-  const activeConv = getActiveConversation()
   const currentModelId = activeConv?.modelId ?? defaultModelId
+  const characterMode = activeConv?.chatMode === 'character'
+  const characterReady = !characterMode || Boolean(activeConv?.characterEntryId?.trim())
+  const [characterName, setCharacterName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!characterMode || !activeConv?.characterEntryId?.trim()) {
+      setCharacterName(null)
+      return
+    }
+    const entryId = activeConv.characterEntryId
+    const session = projectSessionContextFromProject(useProjectStore.getState().currentProject)
+    if (!session) {
+      setCharacterName(null)
+      return
+    }
+    let cancelled = false
+    void listWorldbookEntries(session).then(entries => {
+      if (cancelled) return
+      const entry = entries.find(item => item.id === entryId && item.kind === 'character')
+      setCharacterName(entry?.title.trim() || null)
+    }).catch(() => {
+      if (!cancelled) setCharacterName(null)
+    })
+    return () => { cancelled = true }
+  }, [characterMode, activeConv?.characterEntryId])
 
   // 找到当前模型信息
   const currentModel = models.find(m => m.id === currentModelId)
@@ -66,6 +101,22 @@ export default function AgentInputBox() {
     )
     setProjectInputs(current => new Map(current).set(projectKey, value))
   }, [projectKey])
+
+  useEffect(() => {
+    return registerAgentComposer({
+      getText: () => {
+        if (!projectKey) return ''
+        return inputValuesRef.current.get(projectKey)
+          ?? projectInputDrafts.get(projectKey)?.value
+          ?? ''
+      },
+      clearText: () => {
+        if (!projectKey) return
+        projectInputDrafts.delete(projectKey)
+        replaceInputText('')
+      },
+    })
+  }, [projectKey, replaceInputText])
 
   useEffect(() => {
     if (!projectKey) return
@@ -167,12 +218,12 @@ export default function AgentInputBox() {
       await cancelGeneration()
       return
     }
-    if (!inputText.trim()) return
+    if (!inputText.trim() || !characterReady) return
     const text = inputText
     if (projectKey) projectInputDrafts.delete(projectKey)
     replaceInputText('')
     await sendMessage(text)
-  }, [generating, inputText, projectKey, replaceInputText, sendMessage, cancelGeneration])
+  }, [generating, inputText, characterReady, projectKey, replaceInputText, sendMessage, cancelGeneration])
 
   /** 键盘事件：Enter 发送，Shift+Enter 换行 */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -192,7 +243,14 @@ export default function AgentInputBox() {
     }
   }
 
-  const canSend = !generating && inputText.trim().length > 0
+  const canSend = !generating && inputText.trim().length > 0 && characterReady
+  const placeholder = characterMode && !characterReady
+    ? text('先选要扮的角色', '先选要扮的角色')
+    : characterMode && characterName
+      ? text(`以「${characterName}」的口吻说话…`, `以「${characterName}」的口吻说话…`)
+      : characterMode
+        ? text('以所选角色口吻说话…', '以所选角色口吻说话…')
+        : text('输入消息，/ 使用技能...', 'Type a message, @ mention, or / use a workflow...')
 
   return (
     <div
@@ -243,9 +301,10 @@ export default function AgentInputBox() {
             value={inputText}
             onChange={e => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={text('输入消息，/ 使用技能...', 'Type a message, @ mention, or / use a workflow...')}
+            placeholder={placeholder}
             rows={1}
-            className="w-full resize-none outline-none bg-transparent text-xs leading-relaxed px-2 py-2"
+            disabled={characterMode && !characterReady}
+            className="w-full resize-none outline-none bg-transparent text-xs leading-relaxed px-2 py-2 disabled:opacity-60"
             style={{
               color: 'var(--color-text)',
               minHeight: 36,

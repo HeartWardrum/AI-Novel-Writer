@@ -205,6 +205,15 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
   },
 
   {
+    key: 'direct_chat_character_system',
+    name: '角色模式扮演提示',
+    description: '角色模式下发给模型的出戏约束（不含具体人设）',
+    systemRole: '你正在扮演小说中的一个角色。只用该角色的口吻、身份与所知范围说话；不要跳出角色当写作助手；不要输出 tool_call、invoke 或类似协议标签。',
+    variables: {},
+    content: '后续消息会给出你要扮演的角色公开人设，以及仅此人知道的私有认知。公开常驻设定可作为世界背景，但不要替作者讲解剧情或改大纲。用第一人称或该角色惯用自称回应。',
+  },
+
+  {
     key: 'recruit_finalize',
     name: '酒馆招新·整理入库',
     description: '根据招新答卷整理人物卡并写入世界书；未答字段保持空，禁止臆造。',

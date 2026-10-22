@@ -18,9 +18,20 @@ import {
   saveCharacterPrivateHomework,
   type AssignHomeworkProgress,
 } from '../services/agent/assign-worldbook-homework'
-import { loadDirectChatContinuity } from '../services/agent/direct-chat-continuity'
 import { loadDirectChatWorldbook } from '../services/agent/direct-chat-worldbook'
 import { buildDirectChatSystemPrompt } from '../services/agent/direct-chat-prompt'
+import {
+  buildContinueChapterUserMessage,
+  formatChapterFocusBlock,
+  normalizeFocusChapterNumber,
+} from '../services/agent/continue-chapter'
+import { takeAgentComposerHint } from '../services/agent/agent-composer-bridge'
+import {
+  buildCharacterChatSystemMessages,
+  characterModeReceiptTitles,
+  listCharacterModeSharedEntries,
+} from '../services/agent/direct-chat-character'
+import { listWorldbookEntries } from '../services/worldbook-service'
 import {
   answersFromRecommendation,
   buildCardFromAnswers,
@@ -49,6 +60,7 @@ import {
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
 import {
   buildAgentContextReceipt,
+  type AgentChatMode,
   type AgentContextReceipt,
   type PersistedAgentConversation,
   type PersistedAgentMessage,
@@ -56,7 +68,6 @@ import {
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../shared/project-session-context'
 import { resolveWritingLanguage, writingLanguageText } from '../shared/writing-language'
-import { useEditorStore } from './editor-store'
 import { useLocaleStore } from './locale-store'
 import { useLLMStore } from './llm-store'
 import { useProjectStore } from './project-store'
@@ -82,6 +93,7 @@ export interface AgentRequestDebug {
     creativeStrategy?: string
     historyCount: number
     worldbookCount?: number
+    chatMode?: AgentChatMode
   }
 }
 
@@ -115,6 +127,12 @@ export interface AgentConversation {
   updatedAt: number
   /** 当前会话使用的模型 ID（null 表示使用默认） */
   modelId: string | null
+  /** 作者助手 / 扮演人物；缺省 author */
+  chatMode: AgentChatMode
+  /** 角色模式下选中的世界书人物条目 id */
+  characterEntryId: string | null
+  /** 续写/对话焦点章号 */
+  focusChapterNumber: number
 }
 
 // ===== Store 状态接口 =====
@@ -166,6 +184,14 @@ interface AgentState {
   setShowHistory: (show: boolean) => void
   /** 设置当前会话使用的模型 */
   setModelId: (modelId: string | null) => void
+  /** 切换作者 / 角色模式（招新或作业进行中不可切） */
+  setChatMode: (mode: AgentChatMode) => void
+  /** 角色模式下选中的人物条目 */
+  setCharacterEntryId: (entryId: string | null) => void
+  /** 设置会话焦点章号（续写本章） */
+  setFocusChapterNumber: (chapterNumber: number) => void
+  /** 一键续写本章（取输入框半句指导后发送） */
+  continueCurrentChapter: () => Promise<void>
   /** 删除单条消息（不连带其它消息） */
   deleteMessage: (messageId: string) => void
   /** 仅更新消息正文（不触发重新生成） */
@@ -310,6 +336,9 @@ function toPersistedConversation(conversation: AgentConversation): PersistedAgen
     modelId: conversation.modelId,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
+    chatMode: conversation.chatMode === 'character' ? 'character' : 'author',
+    characterEntryId: conversation.characterEntryId ?? null,
+    focusChapterNumber: normalizeFocusChapterNumber(conversation.focusChapterNumber),
     messages: conversation.messages
       .filter(message => !message.streaming)
       .map((message): PersistedAgentMessage => {
@@ -334,6 +363,9 @@ function fromPersistedConversation(conversation: PersistedAgentConversation): Ag
     modelId: conversation.modelId,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
+    chatMode: conversation.chatMode === 'character' ? 'character' : 'author',
+    characterEntryId: conversation.characterEntryId ?? null,
+    focusChapterNumber: normalizeFocusChapterNumber(conversation.focusChapterNumber),
     messages: conversation.messages.map(message => ({
       id: message.id,
       role: message.role,
@@ -409,7 +441,10 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      modelId: null,
+      modelId: useLLMStore.getState().defaultModelId,
+      chatMode: 'author',
+      characterEntryId: null,
+      focusChapterNumber: 1,
     }
     set(state => ({
       conversations: [newConv, ...state.conversations],
@@ -423,6 +458,63 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   selectConversation: (id) => {
     set({ activeConversationId: id, showHistory: false })
     void persistActiveMeta()
+  },
+
+  setChatMode: (mode) => {
+    const state = get()
+    if (state.recruitActive || state.assignHomework.active || state.recruitBusy) return
+    let conv = state.getActiveConversation()
+    if (!conv) conv = get().createConversation()
+    const chatMode = mode === 'character' ? 'character' : 'author'
+    const convId = conv.id
+    set(s => ({
+      conversations: s.conversations.map(c =>
+        c.id === convId
+          ? { ...c, chatMode, updatedAt: Date.now() }
+          : c
+      ),
+    }))
+    void persistConversationById(convId)
+  },
+
+  setCharacterEntryId: (entryId) => {
+    let conv = get().getActiveConversation()
+    if (!conv) conv = get().createConversation()
+    const convId = conv.id
+    set(s => ({
+      conversations: s.conversations.map(c =>
+        c.id === convId
+          ? { ...c, characterEntryId: entryId, updatedAt: Date.now() }
+          : c
+      ),
+    }))
+    void persistConversationById(convId)
+  },
+
+  setFocusChapterNumber: (chapterNumber) => {
+    let conv = get().getActiveConversation()
+    if (!conv) conv = get().createConversation()
+    const convId = conv.id
+    const focusChapterNumber = normalizeFocusChapterNumber(chapterNumber)
+    set(s => ({
+      conversations: s.conversations.map(c =>
+        c.id === convId
+          ? { ...c, focusChapterNumber, updatedAt: Date.now() }
+          : c
+      ),
+    }))
+    void persistConversationById(convId)
+  },
+
+  continueCurrentChapter: async () => {
+    const state = get()
+    if (state.generating || state.recruitActive || state.recruitBusy || state.assignHomework.active) return
+    let conv = state.getActiveConversation()
+    if (!conv) conv = get().createConversation()
+    if (conv.chatMode === 'character') return
+    const n = normalizeFocusChapterNumber(conv.focusChapterNumber)
+    const hint = takeAgentComposerHint()
+    await get().sendMessage(buildContinueChapterUserMessage(n, hint))
   },
 
   deleteConversation: (id) => {
@@ -520,14 +612,15 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   },
 
   setModelId: (modelId) => {
-    const conv = get().getActiveConversation()
-    if (!conv) return
+    let conv = get().getActiveConversation()
+    if (!conv) conv = get().createConversation()
+    const convId = conv.id
     set(state => ({
       conversations: state.conversations.map(c =>
-        c.id === conv.id ? { ...c, modelId, updatedAt: Date.now() } : c
+        c.id === convId ? { ...c, modelId, updatedAt: Date.now() } : c
       ),
     }))
-    void persistConversationById(conv.id)
+    void persistConversationById(convId)
   },
 
   deleteMessage: (messageId) => {
@@ -1103,27 +1196,91 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       const project = useProjectStore.getState().currentProject
       const writingLanguage = resolveWritingLanguage(project?.novelConfig.writingLanguage)
       const projectSession = projectSessionContextFromProject(project) ?? undefined
-      const systemPrompt = await buildDirectChatSystemPrompt({
-        writingLanguage,
-        projectSession,
-      })
-      const editor = useEditorStore.getState()
-      const activeChapterNumber = editor.tabs.find(tab => tab.id === editor.activeTabId)?.chapterNumber
-      const continuity = await loadDirectChatContinuity({
-        projectSession,
-        chapterNumber: activeChapterNumber,
-      })
-      const worldbook = await loadDirectChatWorldbook({
-        projectSession,
-        userText: userMsg.content,
-      })
-      const llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-        { role: 'system', content: systemPrompt },
-        ...(continuity ? [{ role: 'system' as const, content: continuity.block }] : []),
-        ...(worldbook ? [{ role: 'system' as const, content: worldbook.block }] : []),
-        ...historyMessages,
-        { role: 'user', content: userMsg.content },
-      ]
+      const chatMode = currentConv.chatMode === 'character' ? 'character' : 'author'
+
+      let llmMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+      let contextReceipt: AgentContextReceipt | undefined
+      let worldbookCount: number | undefined
+
+      if (chatMode === 'character') {
+        const entryId = currentConv.characterEntryId?.trim()
+        if (!entryId) {
+          updateAssistantMsg(m => ({
+            ...m,
+            content: text('先选要扮的角色。', '先选要扮的角色。'),
+            streaming: false,
+          }))
+          finishIdle()
+          void persistConversationById(convId).then(() => persistActiveMeta())
+          return
+        }
+        if (!projectSession) {
+          updateAssistantMsg(m => ({
+            ...m,
+            content: text('请先打开作品。', '请先打开作品。'),
+            streaming: false,
+          }))
+          finishIdle()
+          void persistConversationById(convId).then(() => persistActiveMeta())
+          return
+        }
+        const entries = await listWorldbookEntries(projectSession)
+        const entry = entries.find(item => item.id === entryId && item.kind === 'character')
+        if (!entry) {
+          updateAssistantMsg(m => ({
+            ...m,
+            content: text('所选角色已不存在，请重新选择。', '所选角色已不存在，请重新选择。'),
+            streaming: false,
+          }))
+          finishIdle()
+          void persistConversationById(convId).then(() => persistActiveMeta())
+          return
+        }
+        const sharedEntries = listCharacterModeSharedEntries(entries)
+        const systemParts = buildCharacterChatSystemMessages({
+          entry,
+          sharedEntries,
+          writingLanguage,
+        })
+        llmMessages = [
+          ...systemParts,
+          ...historyMessages,
+          { role: 'user', content: userMsg.content },
+        ]
+        worldbookCount = 1 + sharedEntries.length
+        contextReceipt = buildAgentContextReceipt({
+          worldbookTitles: characterModeReceiptTitles(entry, sharedEntries),
+          continuityChapters: [],
+        })
+      } else {
+        const systemPrompt = await buildDirectChatSystemPrompt({
+          writingLanguage,
+          projectSession,
+        })
+        const focusChapterNumber = normalizeFocusChapterNumber(currentConv.focusChapterNumber)
+        const chapterFocus = formatChapterFocusBlock(focusChapterNumber)
+        const worldbook = await loadDirectChatWorldbook({
+          projectSession,
+          userText: userMsg.content,
+          chapterNumber: focusChapterNumber,
+        })
+        const worldbookTitles = [
+          `第 ${focusChapterNumber} 章`,
+          ...(worldbook?.result.selections.map(item => item.title.trim() || item.entryId) ?? []),
+        ]
+        llmMessages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'system', content: chapterFocus },
+          ...(worldbook ? [{ role: 'system' as const, content: worldbook.block }] : []),
+          ...historyMessages,
+          { role: 'user', content: userMsg.content },
+        ]
+        if (worldbook) worldbookCount = worldbook.result.selections.length
+        contextReceipt = buildAgentContextReceipt({
+          worldbookTitles,
+          continuityChapters: [],
+        })
+      }
 
       const purpose = 'generation'
       const reasoningStage = 'drafting'
@@ -1137,15 +1294,10 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           reasoningStage,
           ...(creativeStrategy ? { creativeStrategy } : {}),
           historyCount: historyMessages.length,
-          ...(worldbook ? { worldbookCount: worldbook.result.selections.length } : {}),
+          ...(worldbookCount !== undefined ? { worldbookCount } : {}),
+          chatMode,
         },
       }
-      const contextReceipt = buildAgentContextReceipt({
-        worldbookTitles: worldbook?.result.selections.map(
-          item => item.title.trim() || item.entryId,
-        ),
-        continuityChapters: continuity?.chapters,
-      })
       updateAssistantMsg(m => ({
         ...m,
         requestDebug,

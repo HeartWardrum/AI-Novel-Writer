@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, Trash2 } from 'lucide-react'
 import { useAgentStore } from '../../../stores/agent-store'
+import { useProjectStore } from '../../../stores/project-store'
 import { APP_BRAND } from '../../../shared/brand'
+import { projectSessionContextFromProject } from '../../../shared/project-session-context'
+import { listHomeworkCharacters } from '../../../services/agent/assign-worldbook-homework'
+import { listWorldbookEntries } from '../../../services/worldbook-service'
+import type { WorldbookEntry } from '../../../shared/worldbook'
 import AgentMessage from './AgentMessage'
 import AgentInputBox from './AgentInputBox'
 import RecruitForm from './RecruitForm'
@@ -47,7 +52,44 @@ function RecruitToolbar() {
   const finishRecruit = useAgentStore(s => s.finishRecruit)
   const cancelRecruit = useAgentStore(s => s.cancelRecruit)
   const restartRecruit = useAgentStore(s => s.restartRecruit)
+  const setChatMode = useAgentStore(s => s.setChatMode)
+  const setCharacterEntryId = useAgentStore(s => s.setCharacterEntryId)
+  const setFocusChapterNumber = useAgentStore(s => s.setFocusChapterNumber)
+  const continueCurrentChapter = useAgentStore(s => s.continueCurrentChapter)
+  const activeConv = useAgentStore(s => {
+    const id = s.activeConversationId
+    return id ? (s.conversations.find(c => c.id === id) ?? null) : null
+  })
+  const project = useProjectStore(s => s.currentProject)
+  const [characters, setCharacters] = useState<WorldbookEntry[]>([])
   const busy = generating || recruitBusy || assignHomework.active
+  const modeLocked = recruitActive || assignHomework.active || recruitBusy
+  const chatMode = activeConv?.chatMode === 'character' ? 'character' : 'author'
+  const characterEntryId = activeConv?.characterEntryId ?? null
+  const focusChapterNumber = activeConv?.focusChapterNumber && activeConv.focusChapterNumber >= 1
+    ? Math.floor(activeConv.focusChapterNumber)
+    : 1
+  const canContinueChapter = !busy && !modeLocked && chatMode === 'author'
+
+  useEffect(() => {
+    if (chatMode !== 'character' || recruitActive) {
+      setCharacters([])
+      return
+    }
+    const session = projectSessionContextFromProject(project)
+    if (!session) {
+      setCharacters([])
+      return
+    }
+    let cancelled = false
+    void listWorldbookEntries(session).then(entries => {
+      if (cancelled) return
+      setCharacters(listHomeworkCharacters(entries))
+    }).catch(() => {
+      if (!cancelled) setCharacters([])
+    })
+    return () => { cancelled = true }
+  }, [chatMode, project, recruitActive, assignHomework.active])
 
   if (assignHomework.active) {
     const ratio = assignHomework.total > 0
@@ -111,8 +153,101 @@ function RecruitToolbar() {
   }
 
   if (!recruitActive) {
+    const modeBtn = (mode: 'author' | 'character', label: string) => {
+      const active = chatMode === mode
+      return (
+        <button
+          type="button"
+          disabled={modeLocked}
+          onClick={() => setChatMode(mode)}
+          className="rounded px-2 py-0.5 text-[0.7rem] font-medium transition-colors disabled:opacity-50"
+          style={{
+            color: active ? 'var(--color-accent-contrast, #fff)' : 'var(--color-text-secondary)',
+            background: active ? 'var(--color-accent)' : 'transparent',
+          }}
+          data-testid={`chat-mode-${mode}`}
+        >
+          {label}
+        </button>
+      )
+    }
     return (
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div
+          className="flex items-center gap-0.5 rounded-md p-0.5"
+          style={{ border: '1px solid var(--color-border)', background: 'var(--color-hover)' }}
+          role="group"
+          aria-label={text('对话模式', '对话模式')}
+        >
+          {modeBtn('author', text('作者', '作者'))}
+          {modeBtn('character', text('角色', '角色'))}
+        </div>
+        {chatMode === 'character' && (
+          <select
+            value={characterEntryId ?? ''}
+            disabled={modeLocked}
+            onChange={e => setCharacterEntryId(e.target.value || null)}
+            className="max-w-[10rem] rounded-md px-2 py-1 text-xs disabled:opacity-50"
+            style={{
+              color: 'var(--color-text)',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-sidebar)',
+            }}
+            data-testid="character-mode-select"
+            aria-label={text('扮演角色', '扮演角色')}
+          >
+            <option value="">{text('先选要扮的角色', '先选要扮的角色')}</option>
+            {characters.map(entry => (
+              <option key={entry.id} value={entry.id}>
+                {entry.title.trim() || entry.id}
+              </option>
+            ))}
+          </select>
+        )}
+        {chatMode === 'author' && (
+          <div
+            className="flex items-center gap-0.5 rounded-md px-1 py-0.5"
+            style={{ border: '1px solid var(--color-border)', background: 'var(--color-sidebar)' }}
+            data-testid="focus-chapter-stepper"
+          >
+            <button
+              type="button"
+              disabled={modeLocked || focusChapterNumber <= 1}
+              onClick={() => setFocusChapterNumber(focusChapterNumber - 1)}
+              className="rounded px-1.5 py-0.5 text-[0.7rem] disabled:opacity-40"
+              style={{ color: 'var(--color-text-secondary)' }}
+              aria-label={text('上一章', '上一章')}
+            >
+              −
+            </button>
+            <span className="min-w-[3.5rem] text-center text-[0.7rem]" style={{ color: 'var(--color-text)' }}>
+              {text(`第 ${focusChapterNumber} 章`, `第 ${focusChapterNumber} 章`)}
+            </span>
+            <button
+              type="button"
+              disabled={modeLocked}
+              onClick={() => setFocusChapterNumber(focusChapterNumber + 1)}
+              className="rounded px-1.5 py-0.5 text-[0.7rem] disabled:opacity-40"
+              style={{ color: 'var(--color-text-secondary)' }}
+              aria-label={text('下一章', '下一章')}
+            >
+              +
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={!canContinueChapter}
+          onClick={() => { void continueCurrentChapter() }}
+          className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            color: 'var(--color-accent-contrast, #fff)',
+            background: 'var(--color-accent)',
+          }}
+          data-testid="continue-chapter-button"
+        >
+          {text('续写本章', '续写本章')}
+        </button>
         <button
           type="button"
           disabled={busy}

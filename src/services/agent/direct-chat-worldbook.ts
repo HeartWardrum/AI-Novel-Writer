@@ -25,8 +25,9 @@ export function formatDirectChatWorldbook(selections: readonly WorldbookSelectio
 export async function loadDirectChatWorldbook(options: {
   projectSession?: ProjectSessionContext
   userText: string
+  chapterNumber?: number
 }): Promise<{ block: string; result: WorldbookResolveResult } | null> {
-  const { projectSession, userText } = options
+  const { projectSession, userText, chapterNumber } = options
   const text = userText.trim()
   if (!projectSession || !text) return null
   try {
@@ -35,6 +36,11 @@ export async function loadDirectChatWorldbook(options: {
       draftText: text,
       authorGuidance: text,
       budgetTokens: DIRECT_CHAT_WORLDBOOK_BUDGET,
+      ...(chapterNumber !== undefined
+        && Number.isFinite(chapterNumber)
+        && chapterNumber >= 1
+        ? { chapterNumber: Math.floor(chapterNumber) }
+        : {}),
     })
     const block = formatDirectChatWorldbook(result.selections)
     if (!block) return null

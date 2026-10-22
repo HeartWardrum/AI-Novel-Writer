@@ -1,6 +1,7 @@
 import { getProjectDb } from '../database'
 import type {
   AgentChatLoadResult,
+  AgentChatMode,
   AgentContextReceipt,
   PersistedAgentConversation,
   PersistedAgentMessage,
@@ -32,45 +33,84 @@ function parseContextReceipt(raw: unknown): AgentContextReceipt | undefined {
   return { worldbookTitles, continuityChapters }
 }
 
-function parseMessages(raw: string): PersistedAgentMessage[] {
+function parseMessageList(parsed: unknown): PersistedAgentMessage[] {
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    if (typeof row.id !== 'string' || typeof row.content !== 'string' || typeof row.createdAt !== 'number') return []
+    if (row.role !== 'user' && row.role !== 'assistant' && row.role !== 'system') return []
+    const message: PersistedAgentMessage = {
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      createdAt: row.createdAt,
+    }
+    if ('toolCalls' in row) message.toolCalls = row.toolCalls
+    if ('artifacts' in row) message.artifacts = row.artifacts
+    const contextReceipt = parseContextReceipt(row.contextReceipt)
+    if (contextReceipt) message.contextReceipt = contextReceipt
+    return [message]
+  })
+}
+
+function parseChatMode(raw: unknown): AgentChatMode | undefined {
+  return raw === 'author' || raw === 'character' ? raw : undefined
+}
+
+function parseFocusChapterNumber(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
+  const n = Math.floor(raw)
+  return n >= 1 ? n : undefined
+}
+
+/** messages_json：旧版纯数组；新版信封含 chatMode / characterEntryId / focusChapterNumber。 */
+function parseMessagesPayload(raw: string): {
+  messages: PersistedAgentMessage[]
+  chatMode?: AgentChatMode
+  characterEntryId?: string | null
+  focusChapterNumber?: number
+} {
   try {
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.flatMap(item => {
-      if (!item || typeof item !== 'object') return []
-      const row = item as Record<string, unknown>
-      if (typeof row.id !== 'string' || typeof row.content !== 'string' || typeof row.createdAt !== 'number') return []
-      if (row.role !== 'user' && row.role !== 'assistant' && row.role !== 'system') return []
-      const message: PersistedAgentMessage = {
-        id: row.id,
-        role: row.role,
-        content: row.content,
-        createdAt: row.createdAt,
-      }
-      if ('toolCalls' in row) message.toolCalls = row.toolCalls
-      if ('artifacts' in row) message.artifacts = row.artifacts
-      const contextReceipt = parseContextReceipt(row.contextReceipt)
-      if (contextReceipt) message.contextReceipt = contextReceipt
-      return [message]
-    })
+    if (Array.isArray(parsed)) {
+      return { messages: parseMessageList(parsed) }
+    }
+    if (!parsed || typeof parsed !== 'object') return { messages: [] }
+    const envelope = parsed as Record<string, unknown>
+    const chatMode = parseChatMode(envelope.chatMode)
+    const characterEntryId = envelope.characterEntryId === null
+      ? null
+      : (typeof envelope.characterEntryId === 'string' ? envelope.characterEntryId : undefined)
+    const focusChapterNumber = parseFocusChapterNumber(envelope.focusChapterNumber)
+    return {
+      messages: parseMessageList(envelope.messages),
+      ...(chatMode ? { chatMode } : {}),
+      ...(characterEntryId !== undefined ? { characterEntryId } : {}),
+      ...(focusChapterNumber !== undefined ? { focusChapterNumber } : {}),
+    }
   } catch {
-    return []
+    return { messages: [] }
   }
 }
 
 function rowToConversation(row: ConversationRow): PersistedAgentConversation {
+  const payload = parseMessagesPayload(row.messages_json)
   return {
     id: row.id,
     title: row.title,
     modelId: row.model_id,
-    messages: parseMessages(row.messages_json),
+    messages: payload.messages,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    chatMode: payload.chatMode ?? 'author',
+    characterEntryId: payload.characterEntryId ?? null,
+    focusChapterNumber: payload.focusChapterNumber ?? 1,
   }
 }
 
-function serializeMessages(messages: readonly PersistedAgentMessage[]): string {
-  return JSON.stringify(messages.map(message => {
+function serializeConversationPayload(conversation: PersistedAgentConversation): string {
+  const messages = conversation.messages.map(message => {
     const next: PersistedAgentMessage = {
       id: message.id,
       role: message.role,
@@ -81,7 +121,19 @@ function serializeMessages(messages: readonly PersistedAgentMessage[]): string {
     if (message.artifacts !== undefined) next.artifacts = message.artifacts
     if (message.contextReceipt !== undefined) next.contextReceipt = message.contextReceipt
     return next
-  }))
+  })
+  const focus = typeof conversation.focusChapterNumber === 'number'
+    && Number.isFinite(conversation.focusChapterNumber)
+    && conversation.focusChapterNumber >= 1
+    ? Math.floor(conversation.focusChapterNumber)
+    : 1
+  return JSON.stringify({
+    v: 2,
+    chatMode: conversation.chatMode === 'character' ? 'character' : 'author',
+    characterEntryId: conversation.characterEntryId ?? null,
+    focusChapterNumber: focus,
+    messages,
+  })
 }
 
 export class AgentChatRepository {
@@ -105,11 +157,23 @@ export class AgentChatRepository {
   static upsert(conversation: PersistedAgentConversation): PersistedAgentConversation {
     const db = getProjectDb()
     if (!db) throw new Error('DATABASE_NOT_OPEN')
+    const chatMode = conversation.chatMode === 'character' ? 'character' : 'author'
+    const characterEntryId = conversation.characterEntryId ?? null
+    const focusChapterNumber = typeof conversation.focusChapterNumber === 'number'
+      && Number.isFinite(conversation.focusChapterNumber)
+      && conversation.focusChapterNumber >= 1
+      ? Math.floor(conversation.focusChapterNumber)
+      : 1
     const payload = {
       id: conversation.id,
       title: conversation.title.trim() || '对话',
       modelId: conversation.modelId,
-      messagesJson: serializeMessages(conversation.messages),
+      messagesJson: serializeConversationPayload({
+        ...conversation,
+        chatMode,
+        characterEntryId,
+        focusChapterNumber,
+      }),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     }
@@ -129,6 +193,9 @@ export class AgentChatRepository {
       messages: conversation.messages,
       createdAt: payload.createdAt,
       updatedAt: payload.updatedAt,
+      chatMode,
+      characterEntryId,
+      focusChapterNumber,
     }
   }
 

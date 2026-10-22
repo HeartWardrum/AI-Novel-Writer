@@ -103,6 +103,17 @@ describe('direct chat sendMessage', () => {
     useProjectStore.setState(originalProject, true)
   })
 
+  it('setModelId creates a conversation when none is active so the picker can bind', () => {
+    useLLMStore.setState({ defaultModelId: 'model-a' })
+    expect(useAgentStore.getState().getActiveConversation()).toBeNull()
+
+    useAgentStore.getState().setModelId('model-b')
+
+    const conv = useAgentStore.getState().getActiveConversation()
+    expect(conv).not.toBeNull()
+    expect(conv?.modelId).toBe('model-b')
+  })
+
   it('streams via generateStream with a system prompt that excludes tool protocol', async () => {
     const chunks = ['捉', '鬼', '大纲']
     const generateStream = vi.fn(async (messages, callbacks) => {
@@ -243,24 +254,9 @@ describe('direct chat sendMessage', () => {
     expect(system).not.toContain('直接简洁作答')
   })
 
-  it('injects finalized continuity notes into llmMessages and requestDebug', async () => {
+  it('injects chapter focus without finalized continuity', async () => {
     const project = demoProject()
     useProjectStore.setState({ currentProject: project })
-    useEditorStore.setState({
-      tabs: [{ id: 'tab-ch2', name: '第 2 章', type: 'chapter', projectKey: project.path, chapterNumber: 2, content: '' }],
-      activeTabId: 'tab-ch2',
-    })
-    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string) => {
-      if (channel === 'db:continuity-list-before') {
-        return [{
-          draftId: 1,
-          chapterNumber: 1,
-          chapterTitle: '开端',
-          chapterNotes: '雨夜里他错过了末班车。',
-        }]
-      }
-      return []
-    }) as never)
     const generateStream = vi.fn(async (_messages, callbacks) => {
       callbacks.onDone?.('接上')
       return 'stream-req-7'
@@ -268,42 +264,44 @@ describe('direct chat sendMessage', () => {
     useLLMStore.setState({ generateStream })
 
     useAgentStore.getState().createConversation()
+    useAgentStore.getState().setFocusChapterNumber(2)
     await useAgentStore.getState().sendMessage('写第二章')
 
-    expect(invokeWithProjectSession).toHaveBeenCalledWith(
-      { projectId: 'p1', leaseId: 'lease-1', projectPath: 'C:\\novels\\demo' },
-      'db:continuity-list-before',
-      2,
-      'C:\\novels\\demo',
-    )
+    expect(invokeWithProjectSession.mock.calls.some(call => call[1] === 'db:continuity-list-before')).toBe(false)
     const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
-    const messages = last?.requestDebug?.messages
-    expect(messages?.[1]?.role).toBe('system')
-    expect(messages?.[1]?.content).toContain('【已定稿前文】')
-    expect(messages?.[1]?.content).toContain('雨夜里他错过了末班车。')
+    const messages = last?.requestDebug?.messages ?? []
+    expect(messages.some(m => m.content.includes('【已定稿前文】'))).toBe(false)
+    expect(messages.some(m => m.content.includes('【本章焦点】第 2 章'))).toBe(true)
     expect(last?.contextReceipt).toEqual({
-      worldbookTitles: [],
-      continuityChapters: [{ chapterNumber: 1, chapterTitle: '开端' }],
+      worldbookTitles: ['第 2 章'],
+      continuityChapters: [],
     })
     expect(generateStream.mock.calls[0][0]).toEqual(messages)
   })
 
-  it('skips continuity injection when there is no active chapter tab', async () => {
+  it('continueCurrentChapter sends templated user message with optional hint', async () => {
+    const { registerAgentComposer } = await import('../../services/agent/agent-composer-bridge')
+    const { buildContinueChapterUserMessage } = await import('../../services/agent/continue-chapter')
+    let draft = '今晚别让反派出场'
+    const unregister = registerAgentComposer({
+      getText: () => draft,
+      clearText: () => { draft = '' },
+    })
     const generateStream = vi.fn(async (_messages, callbacks) => {
-      callbacks.onDone?.('ok')
-      return 'stream-req-8'
+      callbacks.onDone?.('正文')
+      return 'stream-continue-1'
     })
     useLLMStore.setState({ generateStream })
 
     useAgentStore.getState().createConversation()
-    await useAgentStore.getState().sendMessage('闲聊')
+    useAgentStore.getState().setFocusChapterNumber(3)
+    await useAgentStore.getState().continueCurrentChapter()
+    unregister()
 
-    expect(invokeWithProjectSession).not.toHaveBeenCalled()
-    const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
-    const messages = last?.requestDebug?.messages ?? []
-    expect(messages.filter(m => m.role === 'system')).toHaveLength(1)
-    expect(messages.some(m => m.content.includes('已定稿前文'))).toBe(false)
-    expect(last?.contextReceipt).toBeUndefined()
+    const lastUser = useAgentStore.getState().getActiveConversation()?.messages.find(m => m.role === 'user')
+    expect(lastUser?.content).toBe(buildContinueChapterUserMessage(3, '今晚别让反派出场'))
+    expect(draft).toBe('')
+    expect(generateStream).toHaveBeenCalledOnce()
   })
 
   it('injects matched worldbook entries into llmMessages and requestDebug', async () => {
@@ -343,13 +341,14 @@ describe('direct chat sendMessage', () => {
         draftText: '说说灯塔',
         authorGuidance: '说说灯塔',
         budgetTokens: 4000,
+        chapterNumber: 1,
       }),
     )
     const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
     const messages = last?.requestDebug?.messages ?? []
     expect(last?.requestDebug?.meta.worldbookCount).toBe(1)
     expect(last?.contextReceipt).toEqual({
-      worldbookTitles: ['灯塔守则'],
+      worldbookTitles: ['第 1 章', '灯塔守则'],
       continuityChapters: [],
     })
     expect(messages.some(m => m.role === 'system' && m.content.includes('【世界书】'))).toBe(true)
@@ -372,6 +371,148 @@ describe('direct chat sendMessage', () => {
     const messages = useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.requestDebug?.messages ?? []
     expect(messages.some(m => m.content.includes('【世界书】'))).toBe(false)
     expect(useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.content).toBe('仍可聊')
+  })
+
+  it('character mode injects persona + private + always-on shared without continuity or keyword resolve', async () => {
+    const project = demoProject()
+    useProjectStore.setState({ currentProject: project })
+    useEditorStore.setState({
+      tabs: [{ id: 'tab-ch2', name: '第 2 章', type: 'chapter', projectKey: project.path, chapterNumber: 2, content: '' }],
+      activeTabId: 'tab-ch2',
+    })
+    invokeWithProjectSession.mockImplementation((async (_session: unknown, channel: string) => {
+      if (channel === 'worldbook:list') {
+        return [
+          {
+            id: 'wb:char:lin',
+            kind: 'character',
+            title: '林晚',
+            content: '青云弟子',
+            privateContent: '其实怕打雷',
+            promptContent: '青云弟子',
+            activation: {
+              primaryKeys: [],
+              secondaryKeys: [],
+              matchMode: 'any',
+              alwaysOn: false,
+              enabled: true,
+              stages: ['drafting'],
+              priority: 10,
+              insertionOrder: 0,
+              group: '',
+              promptPolicy: 'full',
+            },
+            source: { kind: 'author', id: 'lin', revision: '1' },
+            editable: true,
+            deletable: true,
+            needsReview: false,
+            revision: 1,
+            updatedAt: '',
+          },
+          {
+            id: 'wb:world',
+            kind: 'world',
+            title: '世界观',
+            content: '旧港以潮汐计时。',
+            privateContent: '',
+            promptContent: '旧港以潮汐计时。',
+            activation: {
+              primaryKeys: [],
+              secondaryKeys: [],
+              matchMode: 'any',
+              alwaysOn: true,
+              enabled: true,
+              stages: ['drafting'],
+              priority: 10,
+              insertionOrder: 0,
+              group: '',
+              promptPolicy: 'full',
+            },
+            source: { kind: 'author', id: 'world', revision: '1' },
+            editable: true,
+            deletable: true,
+            needsReview: false,
+            revision: 1,
+            updatedAt: '',
+          },
+          {
+            id: 'wb:plot',
+            kind: 'plot-thread',
+            title: '主线',
+            content: '不该出现',
+            privateContent: '',
+            promptContent: '不该出现',
+            activation: {
+              primaryKeys: [],
+              secondaryKeys: [],
+              matchMode: 'any',
+              alwaysOn: true,
+              enabled: true,
+              stages: ['drafting'],
+              priority: 10,
+              insertionOrder: 0,
+              group: '',
+              promptPolicy: 'full',
+            },
+            source: { kind: 'author', id: 'plot', revision: '1' },
+            editable: true,
+            deletable: true,
+            needsReview: false,
+            revision: 1,
+            updatedAt: '',
+          },
+        ]
+      }
+      if (channel === 'db:continuity-list-before') {
+        return [{
+          draftId: 1,
+          chapterNumber: 1,
+          chapterTitle: '开端',
+          chapterNotes: '雨夜里他错过了末班车。',
+        }]
+      }
+      return []
+    }) as never)
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('……')
+      return 'stream-char-1'
+    })
+    useLLMStore.setState({ generateStream })
+
+    useAgentStore.getState().createConversation()
+    useAgentStore.getState().setChatMode('character')
+    useAgentStore.getState().setCharacterEntryId('wb:char:lin')
+    await useAgentStore.getState().sendMessage('你怕什么？')
+
+    expect(resolveWorldbook).not.toHaveBeenCalled()
+    expect(invokeWithProjectSession.mock.calls.some(call => call[1] === 'db:continuity-list-before')).toBe(false)
+    const last = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    const messages = last?.requestDebug?.messages ?? []
+    expect(last?.requestDebug?.meta.chatMode).toBe('character')
+    expect(messages.some(m => m.content.includes('其实怕打雷'))).toBe(true)
+    expect(messages.some(m => m.content.includes('旧港以潮汐计时。'))).toBe(true)
+    expect(messages.some(m => m.content.includes('不该出现'))).toBe(false)
+    expect(messages.some(m => m.content.includes('已定稿前文'))).toBe(false)
+    expect(last?.contextReceipt).toEqual({
+      worldbookTitles: ['林晚', '私有认知', '世界观'],
+      continuityChapters: [],
+    })
+  })
+
+  it('character mode without selected entry refuses to stream', async () => {
+    useProjectStore.setState({ currentProject: demoProject() })
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('不应出现')
+      return 'stream-char-2'
+    })
+    useLLMStore.setState({ generateStream })
+
+    useAgentStore.getState().createConversation()
+    useAgentStore.getState().setChatMode('character')
+    await useAgentStore.getState().sendMessage('你好')
+
+    expect(generateStream).not.toHaveBeenCalled()
+    expect(useAgentStore.getState().getActiveConversation()?.messages.at(-1)?.content).toContain('先选要扮的角色')
   })
 
   it('upserts the conversation after send without requestDebug', async () => {
