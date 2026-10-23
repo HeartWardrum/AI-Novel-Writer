@@ -1,0 +1,63 @@
+.adventure-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.adventure-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rule-strong, var(--rule));
+  flex-shrink: 0;
+}
+
+.adventure-topbar-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.adventure-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px clamp(20px, 4vw, 48px) 40px;
+  max-width: 42rem;
+}
+
+.adventure-title {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 2.4vw, 2rem);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.adventure-lede {
+  margin: 0 0 1.5rem;
+  color: var(--ink-muted, color-mix(in srgb, var(--ink) 72%, transparent));
+  line-height: 1.55;
+}
+
+.adventure-beat {
+  display: grid;
+  gap: 0.9rem;
+  margin-bottom: 1.75rem;
+  line-height: 1.7;
+}
+
+.adventure-beat p {
+  margin: 0;
+}
+
+.adventure-stub-note {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-muted, color-mix(in srgb, var(--ink) 65%, transparent));
+}

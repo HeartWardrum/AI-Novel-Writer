@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
-/** 书房（home）或作品（project）。 */
-export type SidebarView = 'home' | 'project'
+/** 书房（home）、作品（project）或冒险占位（adventure）。 */
+export type SidebarView = 'home' | 'project' | 'adventure'
 
 /** 设置页的分区。 */
 export type SettingsSection = 'appearance' | 'llm' | 'embedding' | 'proxy' | 'prompts' | 'skills' | 'recruit' | 'backup' | 'about'

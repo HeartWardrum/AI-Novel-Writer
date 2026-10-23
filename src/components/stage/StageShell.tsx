@@ -10,6 +10,7 @@ import type { Theme } from '../../stores/theme-store'
 import ClearProjectDataDialog from '../dialogs/ClearProjectDataDialog'
 import { leaveSettingsThen, openProjectFolder } from '../settings/unsaved-settings'
 import type { MenuGroupSpec } from '../ui/Menu'
+import AdventureShell from './adventure/AdventureShell'
 import NewWorkDialog from './library/NewWorkDialog'
 import { SETTINGS_PAGES } from './settings/settings-pages'
 import { preloadStagePages } from './stage-pages'
@@ -48,9 +49,11 @@ export default function StageShell({ theme }: { theme: Theme }) {
   const text = useLocaleStore(s => s.text)
   const hasProject = useProjectStore(s => Boolean(s.currentProject))
   const recentProjects = useProjectStore(s => s.recentProjects)
-  const home = useLayoutStore(s => s.sidebarView === 'home')
-  const library = !hasProject || home
-  const focus = useStageStore(s => s.focus) && !library
+  const sidebarView = useLayoutStore(s => s.sidebarView)
+  const adventure = sidebarView === 'adventure'
+  const home = sidebarView === 'home'
+  const library = !adventure && (!hasProject || home)
+  const focus = useStageStore(s => s.focus) && !library && !adventure
   const palette = useStageStore(s => s.palette)
   const rightRail = useStageStore(s => s.rightRail)
   const sheet = useStageStore(s => s.sheet)
@@ -64,26 +67,27 @@ export default function StageShell({ theme }: { theme: Theme }) {
 
   useStageWorkRefresh()
   useLandingPage(view)
-  useStageShortcuts({ library, focus })
+  useStageShortcuts({ library: library || adventure, focus })
 
   useEffect(() => {
-    if (library && useStageStore.getState().focus) useStageStore.setState({ focus: false })
-    if (library && useStageStore.getState().chatOverlay) useStageStore.setState({ chatOverlay: null })
-  }, [library])
+    if ((library || adventure) && useStageStore.getState().focus) useStageStore.setState({ focus: false })
+    if ((library || adventure) && useStageStore.getState().chatOverlay) useStageStore.setState({ chatOverlay: null })
+  }, [library, adventure])
 
   useEffect(() => {
     const handle = requestIdleCallback(preloadStagePages, { timeout: 2000 })
     return () => cancelIdleCallback(handle)
   }, [])
 
-  // 设置页属于打开它时的书房或作品；在书房与作品之间切换时收起。
+  // 设置页属于打开它时的书房、作品或冒险；在这些外壳之间切换时收起。
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
   const settingsSection = useLayoutStore(s => s.settingsSection)
-  const wasLibrary = useRef(library)
+  const wasSurface = useRef(library ? 'library' : adventure ? 'adventure' : 'work')
   useEffect(() => {
-    if (wasLibrary.current !== library && useLayoutStore.getState().settingsOpen) useLayoutStore.getState().closeSettings()
-    wasLibrary.current = library
-  }, [library])
+    const surface = library ? 'library' : adventure ? 'adventure' : 'work'
+    if (wasSurface.current !== surface && useLayoutStore.getState().settingsOpen) useLayoutStore.getState().closeSettings()
+    wasSurface.current = surface
+  }, [library, adventure])
 
   const toggleFocus = useCallback(() => useStageStore.setState(state => ({ focus: !state.focus, palette: null })), [])
 
@@ -140,11 +144,14 @@ export default function StageShell({ theme }: { theme: Theme }) {
       ref={setRoot}
       className="paper-ink stage-shell"
       data-theme={theme}
-      data-shell-presentation={library ? 'stage' : 'chat'}
+      data-shell-presentation={library || adventure ? 'stage' : 'chat'}
       data-focus={focus || undefined}
       data-library={library || undefined}
+      data-adventure={adventure || undefined}
     >
-      {library ? (
+      {adventure ? (
+        <AdventureShell />
+      ) : library ? (
         <>
           <StageTopBar
             crumbs={crumbs}

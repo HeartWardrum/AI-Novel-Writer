@@ -300,13 +300,21 @@ beforeEach(() => {
 })
 
 describe('database controller project context guard', () => {
-  it('adds only proven current derived fields to the read view using verified portable origin', async () => {
+  it('keeps roster-read free of derived-field projection', async () => {
     const database = { synthetic: true }
     mocks.getProjectDb.mockReturnValue(database)
     mocks.readPortableCurrentAuthority.mockReturnValue({ originProjectId: 'origin-A' })
-    const roster = mocks.characterRosterRead()
-    expect(await handler('db:character-roster-read')({}, 'C:/projects/A')).toEqual({
-      ...roster, currentDerivedFields: { characterA: ['recentEvents'] },
+    expect(await handler('db:character-roster-read')({}, 'C:/projects/A')).toEqual(mocks.characterRosterRead())
+    expect(mocks.currentDerivedCharacterFields).not.toHaveBeenCalled()
+    expect(mocks.readPortableCurrentAuthority).not.toHaveBeenCalled()
+  })
+
+  it('loads proven current derived fields only via the lazy derived-fields channel', async () => {
+    const database = { synthetic: true }
+    mocks.getProjectDb.mockReturnValue(database)
+    mocks.readPortableCurrentAuthority.mockReturnValue({ originProjectId: 'origin-A' })
+    expect(await handler('db:character-derived-fields-read')({}, 'C:/projects/A')).toEqual({
+      characterA: ['recentEvents'],
     })
     expect(mocks.readPortableCurrentAuthority).toHaveBeenCalledWith({
       database, projectStorageRoot: 'C:/projects/A/.ai-novel', projectId: 'project-A',
@@ -314,12 +322,10 @@ describe('database controller project context guard', () => {
     expect(mocks.currentDerivedCharacterFields).toHaveBeenCalledWith(database, 'project-A', 'origin-A')
   })
 
-  it('keeps raw roster readable but grants no derived fields if source verification fails', async () => {
+  it('grants no derived fields if source verification fails on the lazy channel', async () => {
     mocks.getProjectDb.mockReturnValue({ synthetic: true })
     mocks.currentDerivedCharacterFields.mockImplementationOnce(() => { throw new Error('SOURCE_UNPROVED') })
-    expect(await handler('db:character-roster-read')({}, 'C:/projects/A')).toEqual({
-      ...mocks.characterRosterRead(), currentDerivedFields: {},
-    })
+    expect(await handler('db:character-derived-fields-read')({}, 'C:/projects/A')).toEqual({})
   })
 
   it('routes M02 author ID writes through the captured author transaction and rechecks its session', async () => {

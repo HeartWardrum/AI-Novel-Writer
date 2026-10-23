@@ -220,6 +220,8 @@ interface CharacterState {
   lastError: string | null
 
   load: (projectPath?: string, expectedProjectSession?: ProjectSessionContext) => Promise<void>
+  /** 档案页按需拉取定稿连续性投影；失败不挡名单。 */
+  loadCurrentDerivedFields: () => Promise<void>
   beginProjectLoad: (projectPath: string) => void
   reset: () => void
   setSelectedId: (id: string | null) => void
@@ -380,7 +382,8 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       const selected = visibleCards.find((card, index) => characterSelectionKey(card, index) === selectedId) ?? visibleCards[0]
       set({
         characters: visibleCards,
-        currentDerivedFields: roster.currentDerivedFields ?? {},
+        // 连续性投影改由 loadCurrentDerivedFields 按需拉取，名单热路径不带。
+        currentDerivedFields: {},
         loaded: true,
         dataProjectKey: requestedProjectKey,
         dataProjectSession: projectSession,
@@ -417,6 +420,36 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
 
   loadCharacters: async (projectPath, expectedProjectSession) => {
     await get().load(projectPath, expectedProjectSession)
+  },
+
+  loadCurrentDerivedFields: async () => {
+    const projectSession = currentCharacterProjectSession()
+    if (!projectSession) return
+    const state = get()
+    if (
+      !sameProjectSessionContext(state.dataProjectSession, projectSession)
+      || state.loadingProjectSession !== null
+      || state.lastError !== null
+    ) return
+    try {
+      const fields = await ipc.invokeWithProjectSession(
+        projectSession,
+        'db:character-derived-fields-read',
+        projectSession.projectPath,
+      )
+      if (
+        !isCharacterProjectSessionCurrent(projectSession)
+        || !sameProjectSessionContext(get().dataProjectSession, projectSession)
+      ) return
+      set({ currentDerivedFields: fields ?? {} })
+    } catch {
+      if (
+        isCharacterProjectSessionCurrent(projectSession)
+        && sameProjectSessionContext(get().dataProjectSession, projectSession)
+      ) {
+        set({ currentDerivedFields: {} })
+      }
+    }
   },
 
   beginProjectLoad: (projectPath) => {

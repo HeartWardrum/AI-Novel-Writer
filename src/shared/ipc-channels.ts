@@ -937,6 +937,7 @@ import type {
   CharacterRosterCommitReceipt,
   CharacterRosterCommitRequest,
   CharacterRosterSnapshot,
+  CharacterStateTextField,
 } from './character-roster'
 import type {
   FinalizedDraftImportReceipt,
@@ -1063,6 +1064,11 @@ export interface DatabaseChannels {
   'db:character-roster-read': {
     args: [expectedProjectPath: string]
     return: CharacterRosterSnapshot
+  }
+  /** 档案页按需：定稿连续性派生字段；不挂在名单热路径上。 */
+  'db:character-derived-fields-read': {
+    args: [expectedProjectPath: string]
+    return: Record<string, CharacterStateTextField[]>
   }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { FileInput, FolderOpen, Plus } from 'lucide-react'
+import { FileInput, FolderOpen, Plus, Scroll } from 'lucide-react'
 import { ipc } from '../../../services/ipc-client'
+import { leaveSettingsThen } from '../../settings/unsaved-settings'
 import { useLayoutStore } from '../../../stores/layout-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
@@ -22,6 +23,8 @@ import { shelfTime } from './shelf-format'
 import { barsFromOverview, barsFromStages, nextStep } from './shelf-progress'
 import { useShelfOverview, type ShelfBook as Book } from './use-shelf-overview'
 import { pluralEn } from '../../../shared/plural-en'
+
+const enterShanHaiAdventure = () => leaveSettingsThen(() => useLayoutStore.getState().setSidebarView('adventure'))
 
 type Text = (zh: string, en: string) => string
 
@@ -64,6 +67,10 @@ function StartActions() {
           { id: 'legacy', label: text('导入旧项目副本…', 'Import an old project copy…'), disabled: legacyImportBusy, onSelect: () => void useProjectStore.getState().importLegacyProject() },
         ] }]}
       />
+      <button type="button" className="stage-start" aria-label={text('山海经捉妖', '山海经捉妖')} onClick={enterShanHaiAdventure}>
+        <span className="stage-start-icon"><Scroll size={16} aria-hidden="true" /></span>
+        <span className="stage-start-text"><b>{text('山海经捉妖', '山海经捉妖')}</b><span>{text('进入冒险（不经作品设定）', '进入冒险（不经作品设定）')}</span></span>
+      </button>
     </div>
   )
 }
@@ -88,6 +95,7 @@ function EmptyLibrary({ modelMissing }: { modelMissing: boolean }) {
         <Button variant="text" size="sm" onClick={() => void openProjectFolder()}>{text('打开作品', 'Open a book')}</Button>
         <Button variant="text" size="sm" onClick={() => useLayoutStore.getState().openImportNovel()}>{text('小说拆解与仿写', 'Novel breakdown & imitation')}</Button>
         <Button variant="text" size="sm" disabled={legacyImportBusy} onClick={() => void useProjectStore.getState().importLegacyProject()}>{text('导入旧项目副本', 'Import an old project copy')}</Button>
+        <Button variant="text" size="sm" onClick={enterShanHaiAdventure}>{text('山海经捉妖', '山海经捉妖')}</Button>
       </div>
       <div className="stage-library-empty-notes">
         <LegacyImportNotice />

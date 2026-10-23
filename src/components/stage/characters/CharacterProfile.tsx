@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Ellipsis, Save, UserRound } from 'lucide-react'
 import { CHARACTER_ROLES, getCharacterRoleLabels } from '../../../shared/character-role'
 import { relationshipStorageFromEditor } from '../../../shared/relationship-presentation'
@@ -42,6 +42,12 @@ export default function CharacterProfile({ projectKey }: { projectKey: string })
   const [confirming, setConfirming] = useState<'selected' | 'all' | null>(null)
   const avatar = useCharacterAvatar(card?.characterId ?? null, dataReady && view === 'edit')
   const portraits = useCharacterPortraits(card?.characterId ?? null, dataReady && view === 'edit')
+
+  useEffect(() => {
+    if (!dataReady) return
+    void useCharacterStore.getState().loadCurrentDerivedFields()
+  }, [dataReady, projectKey])
+
   const roleText = (role: unknown) => {
     const { zhCN, enUS } = getCharacterRoleLabels(role)
     return text(zhCN, enUS)

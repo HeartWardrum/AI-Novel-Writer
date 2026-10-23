@@ -734,22 +734,20 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             ? result.project!.novelConfig : restored.value },
           projectSessionEpoch: state.projectSessionEpoch + 1,
         }))
-        // 默认落点与提交同步落下：之后读文件树、最近项目期间作者的导航（回书房、开运行侧页、换侧栏）都在它之后，不会被改回。
+        // 默认落点与提交同步落下：之后读文件树、最近项目、Layer2 并行期间作者的导航都在它之后，不会被改回。
         navigate({ kind: 'stage' })
         const partialLoadWarnings: string[] = []
-        // Opening a project revokes old shelf preview capabilities in main.
-        // Refresh the visible shelf handles without turning a successful open into a failure.
-        try {
-          await get().loadRecentProjects()
-        } catch (recentError) {
+        // 最近项目 / 文件树 / 角色卡等 Layer2 互不依赖：并行，避免挡左栏名单。
+        const [recentResult, fileTreeResult, layer2Result] = await Promise.allSettled([
+          get().loadRecentProjects(),
+          get().refreshFileTree(result.project.path),
+          callProjectOpened(openedProjectSession),
+        ])
+        if (recentResult.status === 'rejected') {
           set({ recentProjects: [] })
-          partialLoadWarnings.push(String(recentError))
+          partialLoadWarnings.push(String(recentResult.reason))
         }
-        // 核心项目身份已经提交。文件树属于可降级的第二层视图，
-        // 失败不能再把这个已打开的项目报告成整体打开失败。
-        try {
-          await get().refreshFileTree(result.project.path)
-        } catch (fileTreeError) {
+        if (fileTreeResult.status === 'rejected') {
           if (
             !isLatestRequest()
             || !sameRendererProject(get().currentProject, result.project)
@@ -758,20 +756,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             // 但主进程与当前界面已由当前请求或更新请求负责保持一致。
             return false
           }
-          console.error('[Project] 项目文件树加载失败:', fileTreeError)
-          partialLoadWarnings.push(String(fileTreeError))
+          console.error('[Project] 项目文件树加载失败:', fileTreeResult.reason)
+          partialLoadWarnings.push(String(fileTreeResult.reason))
           set({ fileTree: [] })
         }
         // 此后渲染进程已经提交返回项目；过期状态只影响派生视图，可以安全退出。
         if (!isLatestRequest()) return false
-        // 统一初始化第二层状态仓库（角色卡、草稿等）
         let layer2Warnings: string[] = []
-        try {
-          const layer2Result = await callProjectOpened(openedProjectSession)
-          layer2Warnings = layer2Result?.warnings ?? []
-        } catch (layer2Error) {
-          console.error('[Project] 项目资源初始化失败:', layer2Error)
-          layer2Warnings = [String(layer2Error)]
+        if (layer2Result.status === 'fulfilled') {
+          layer2Warnings = layer2Result.value?.warnings ?? []
+        } else {
+          console.error('[Project] 项目资源初始化失败:', layer2Result.reason)
+          layer2Warnings = [String(layer2Result.reason)]
         }
         if (!isLatestRequest()) return false
         const warnings = [...partialLoadWarnings, ...layer2Warnings]

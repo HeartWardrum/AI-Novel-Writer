@@ -796,17 +796,26 @@ export function registerDatabaseController() {
 
   ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    const roster = CharacterRosterRepository.read()
+    // 名单热路径不算定稿连续性投影；档案页按需走 db:character-derived-fields-read。
+    return CharacterRosterRepository.read()
+  })
+
+  ipcMain.handle('db:character-derived-fields-read', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     const session = projectAccess.captureCurrentSession()
-    let currentDerivedFields = {}
-    if (database && session) {
-      try {
-        const authority = readPortableCurrentAuthority({ database, projectStorageRoot: getProjectDataRoot(session.rootPath), projectId: session.projectId })
-        currentDerivedFields = currentDerivedCharacterFields(database, session.projectId, authority?.originProjectId)
-      } catch { /* Missing source proof never makes a derived field current; raw author/history remains readable. */ }
+    if (!database || !session) return {}
+    try {
+      const authority = readPortableCurrentAuthority({
+        database,
+        projectStorageRoot: getProjectDataRoot(session.rootPath),
+        projectId: session.projectId,
+      })
+      return currentDerivedCharacterFields(database, session.projectId, authority?.originProjectId)
+    } catch {
+      // Missing source proof never makes a derived field current; raw author/history remains readable.
+      return {}
     }
-    return { ...roster, currentDerivedFields }
   })
 
   ipcMain.handle('db:character-roster-commit', async (
