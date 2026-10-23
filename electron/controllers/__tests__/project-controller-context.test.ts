@@ -351,6 +351,36 @@ describe('project controller project identity', () => {
     await expect(handler('dialog:select-folder')({ sender }, 'write')).rejects.toThrow('用途无效')
   })
 
+  it('grants create-parent from a recent project path without opening a folder dialog', async () => {
+    const sender = { id: 21, once: vi.fn() }
+    const recentBook = path.join(projectB, '雨夜')
+    const parentDir = path.resolve(projectB)
+    mocks.recentProjects = [{ name: '雨夜', path: recentBook, updatedAt: '2026-01-01' }]
+    mocks.existingPaths.add(parentDir)
+    mocks.issueDirectory.mockReturnValue({ grantId: 'parent-grant' })
+
+    await expect(handler('dialog:grant-create-parent')({ sender }, recentBook))
+      .resolves.toEqual({ grantId: 'parent-grant', displayName: path.basename(parentDir) })
+    expect(mocks.showOpenDialog).not.toHaveBeenCalled()
+    expect(mocks.issueDirectory).toHaveBeenCalledWith({
+      webContentsId: 21, directoryPath: parentDir, operations: ['project-create'], ttlMs: 600_000,
+    })
+  })
+
+  it('rejects create-parent grants that are not from recent projects or missing parents', async () => {
+    const sender = { id: 22, once: vi.fn() }
+    mocks.recentProjects = []
+    await expect(handler('dialog:grant-create-parent')({ sender }, projectB))
+      .rejects.toThrow('只能选用最近作品的保存位置')
+
+    const recentBook = path.join(projectB, '雨夜')
+    mocks.recentProjects = [{ name: '雨夜', path: recentBook, updatedAt: '2026-01-01' }]
+    mocks.existingPaths.clear()
+    await expect(handler('dialog:grant-create-parent')({ sender }, recentBook))
+      .rejects.toThrow('该保存位置已不存在')
+    expect(mocks.issueDirectory).not.toHaveBeenCalled()
+  })
+
   it('rejects an unselected, unregistered raw project path before probing it', async () => {
     await expect(handler('project:open')({ sender: { id: 17 } }, ordinaryDirectory, 'ungranted'))
       .resolves.toMatchObject({ success: false })

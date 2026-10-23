@@ -15,6 +15,7 @@ import { sameProjectPathKey } from '../../src/shared/project-session-context'
 import {
   resolveWritingLanguage,
 } from '../../src/shared/writing-language'
+import { normalizeProseToneId } from '../../src/shared/prose-tone'
 import {
   closeProjectDatabase,
   createProjectDatabase,
@@ -138,6 +139,14 @@ function creativeStrategyCoreUpdate(
 ): Pick<Partial<ProjectCoreData>, 'creativeStrategy'> {
   return novelConfig.creativeStrategy
     ? { creativeStrategy: novelConfig.creativeStrategy }
+    : {}
+}
+
+function proseToneCoreUpdate(
+  novelConfig: ProjectData['novelConfig'],
+): Pick<Partial<ProjectCoreData>, 'proseTone'> {
+  return novelConfig.proseTone !== undefined
+    ? { proseTone: normalizeProseToneId(novelConfig.proseTone) }
     : {}
 }
 
@@ -638,6 +647,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
             globalGuidance: updatedCoreData.globalGuidance,
             writingStyle: updatedCoreData.writingStyle,
             referenceWorks: updatedCoreData.referenceWorks,
+            proseTone: updatedCoreData.proseTone,
           },
           characterStates: updatedCoreData.characterStates,
           createdAt: new Date().toISOString(), // 数据库中实际上有，但这里先提供时间值避免前端报错
@@ -760,6 +770,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           protagonistProfile: data.novelConfig.protagonistProfile,
           writingStyle: data.novelConfig.writingStyle ?? '',
           referenceWorks: data.novelConfig.referenceWorks ?? '',
+          ...proseToneCoreUpdate(data.novelConfig),
         })
       }
 
@@ -829,6 +840,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           protagonistProfile: data.novelConfig.protagonistProfile,
           writingStyle: data.novelConfig.writingStyle ?? '',
           referenceWorks: data.novelConfig.referenceWorks ?? '',
+          ...proseToneCoreUpdate(data.novelConfig),
         })
       }
       return { success: true }
@@ -990,5 +1002,24 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return issueDirectoryGrant(event, result.filePaths[0], purpose)
+  })
+
+  ipcMain.handle('dialog:grant-create-parent', async (event, recentProjectPath: string) => {
+    if (typeof recentProjectPath !== 'string' || !recentProjectPath.trim()) {
+      throw new Error('最近作品路径无效')
+    }
+    const matched = loadRecentProjects().find(project => sameRecentProjectPath(project.path, recentProjectPath))
+    if (!matched) throw new Error('只能选用最近作品的保存位置')
+    const parentDir = path.dirname(matched.path)
+    if (!parentDir || parentDir === matched.path) throw new Error('无法解析保存父目录')
+    if (!fs.existsSync(parentDir)) throw new Error('该保存位置已不存在')
+    let isDirectory = false
+    try {
+      isDirectory = fs.statSync(parentDir).isDirectory()
+    } catch {
+      throw new Error('该保存位置已不存在')
+    }
+    if (!isDirectory) throw new Error('该保存位置已不存在')
+    return issueDirectoryGrant(event, parentDir, 'project-create')
   })
 }

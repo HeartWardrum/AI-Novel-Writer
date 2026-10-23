@@ -601,6 +601,42 @@
   color: var(--ink-3);
 }
 
+.stage-new-work-recent {
+  margin-top: var(--s-3);
+}
+
+.stage-new-work-recent > .stage-dialog-hint {
+  margin-bottom: var(--s-2);
+}
+
+.stage-new-work-recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-new-work-recent-chip {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.stage-new-work-recent-chip[data-active] {
+  border-color: transparent;
+  background: var(--accent, var(--ink));
+  color: var(--accent-contrast, #fff);
+}
+
+.stage-new-work-recent-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /*
  * 减少动态效果：书封不抬起不落下，悬停改成投影加深、按下改成内凹，仍看得出指着哪本、按下了没有。
  * 选中的书保留强调色圈，键盘按下保留焦点环，内凹叠在它们里面。

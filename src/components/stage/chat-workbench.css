@@ -85,6 +85,7 @@
 }
 
 .chat-workbench-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -119,6 +120,16 @@
 .chat-workbench-chat-panel .writer-ai-panel {
   flex: 1;
   min-height: 0;
+}
+
+/* 中间对话列：保留滚动，隐藏可见滚动条（右侧迷你轴承担位置感） */
+.chat-message-scroll {
+  scrollbar-width: none;
+}
+
+.chat-message-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .chat-overlay {

@@ -118,7 +118,7 @@ export function parsePortableTransferAuthority(value: unknown): PortableTransfer
     'version', 'receiptId', 'originProjectId', 'targetProjectId', 'snapshotGeneration', 'sourceSchemaVersion',
     'portableDatabaseSha256', 'requiresRuntimeFreezeGuard', 'finalizations', 'summarySources',
   ])
-  if (source.version !== 1 || !PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS.includes(source.sourceSchemaVersion as 8 | 9 | 10 | 11)
+  if (source.version !== 1 || !PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS.includes(source.sourceSchemaVersion as 8 | 9 | 10 | 11 | 12)
     || source.requiresRuntimeFreezeGuard !== true || !Array.isArray(source.finalizations)
     || !Array.isArray(source.summarySources) || source.finalizations.length > MAX_RECORDS
     || source.summarySources.length > MAX_RECORDS) invalid()
@@ -131,7 +131,7 @@ export function parsePortableTransferAuthority(value: unknown): PortableTransfer
     originProjectId: uuid(source.originProjectId),
     targetProjectId: source.targetProjectId === null ? null : uuid(source.targetProjectId),
     snapshotGeneration: identifier(source.snapshotGeneration),
-    sourceSchemaVersion: source.sourceSchemaVersion as 8 | 9 | 10 | 11,
+    sourceSchemaVersion: source.sourceSchemaVersion as 8 | 9 | 10 | 11 | 12,
     portableDatabaseSha256: hash(source.portableDatabaseSha256),
     requiresRuntimeFreezeGuard: true,
     finalizations,

@@ -29,6 +29,7 @@ import type { EmbeddingOptions } from './embedding-options'
 import type { ModelCapabilities } from './provider-presets'
 import type { ModelProviderResourceId } from './model-provider-resources'
 import type { WritingLanguage } from './writing-language'
+import type { ProseToneId } from './prose-tone'
 import type { DraftStatus } from './draft-status'
 import type { ReviewCycleProjection } from './review-cycle'
 import type {
@@ -447,6 +448,11 @@ export interface ProjectChannels {
     args: [purpose: 'project-create' | 'project-open']
     return: ProjectDirectoryGrant | null
   }
+  /** 用最近作品路径证明父目录，签发 project-create 授权（不弹系统对话框） */
+  'dialog:grant-create-parent': {
+    args: [recentProjectPath: string]
+    return: ProjectDirectoryGrant
+  }
 }
 
 // ===== 文件系统 =====
@@ -662,6 +668,8 @@ export interface NovelConfig {
   globalGuidance: string
   writingStyle?: string
   referenceWorks?: string
+  /** 作者对话文风滤镜（作品级，世界书里切换） */
+  proseTone?: ProseToneId
 }
 
 export interface FileNode {

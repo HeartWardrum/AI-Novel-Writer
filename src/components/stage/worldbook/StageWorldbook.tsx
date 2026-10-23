@@ -32,9 +32,17 @@ import {
   type WorldbookSourceCandidate,
 } from '../../../shared/worldbook'
 import { resolveWritingLanguage } from '../../../shared/writing-language'
+import {
+  normalizeProseToneId,
+  PROSE_TONE_PRESETS,
+  type ProseToneId,
+} from '../../../shared/prose-tone'
 import { composeDirectChatSystemSeed } from '../../../services/agent/direct-chat-prompt'
 import { captureProjectSession, isProjectSessionCurrent } from '../../project-session-gate'
-import { sameProjectPathKey } from '../../../shared/project-session-context'
+import {
+  projectSessionContextFromProject,
+  sameProjectPathKey,
+} from '../../../shared/project-session-context'
 import { Button } from '../../ui/Button'
 import { Notice } from '../../ui/Notice'
 import { toast } from '../../ui/Toast'
@@ -127,8 +135,11 @@ function parseSplitProposals(content: string): SplitProposal[] {
 export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(state => state.text)
   const project = useProjectStore(state => state.currentProject)
+  const updateNovelConfig = useProjectStore(state => state.updateNovelConfig)
+  const saveProject = useProjectStore(state => state.saveProject)
   const models = useLLMStore(state => state.models)
   const defaultModelId = useLLMStore(state => state.defaultModelId)
+  const proseTone: ProseToneId = normalizeProseToneId(project?.novelConfig.proseTone)
   const [entries, setEntries] = useState<WorldbookEntry[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -390,6 +401,21 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     }
   }
 
+  const setProseTone = async (tone: ProseToneId) => {
+    const next = normalizeProseToneId(tone)
+    if (next === proseTone) return
+    const projectSession = projectSessionContextFromProject(project)
+    if (!projectSession) {
+      toast.error(text('当前作品会话未就绪，请重新打开作品后再保存', 'Project session is not ready. Reopen the project and try again.'))
+      return
+    }
+    updateNovelConfig({ proseTone: next }, projectSession)
+    const saved = await saveProject(projectSession)
+    if (!saved) {
+      toast.error(text('文风滤镜未能保存', 'Could not save the prose tone filter'))
+    }
+  }
+
   const proposeSplit = async () => {
     if (!session || !selected || !selected.content) return
     if (selected.kind !== 'reference' && selected.source.kind !== 'import') return
@@ -468,6 +494,36 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
             <RefreshCw size={14} aria-hidden />
           </Button>
         </header>
+        <section
+          className="worldbook-prose-tone"
+          data-testid="worldbook-prose-tone"
+          aria-label={text('文风滤镜', '文风滤镜')}
+        >
+          <div className="worldbook-prose-tone-copy">
+            <p className="worldbook-prose-tone-title">{text('文风滤镜', '文风滤镜')}</p>
+            <p className="worldbook-prose-tone-hint">
+              {text('作者对话按此调性写；不新增剧情。', '作者对话按此调性写；不新增剧情。')}
+            </p>
+          </div>
+          <div className="worldbook-prose-tone-chips" role="group" aria-label={text('文风滤镜', '文风滤镜')}>
+            {PROSE_TONE_PRESETS.map(preset => {
+              const active = proseTone === preset.id
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="worldbook-prose-tone-chip"
+                  data-active={active || undefined}
+                  data-testid={`prose-tone-${preset.id}`}
+                  aria-pressed={active}
+                  onClick={() => { void setProseTone(preset.id) }}
+                >
+                  {text(preset.label, preset.label)}
+                </button>
+              )
+            })}
+          </div>
+        </section>
         <div className="worldbook-list-actions">
           <Button variant="primary" size="sm" onClick={() => startNew()}><Plus size={14} aria-hidden />{text('新建条目', 'New entry')}</Button>
           <Button variant="secondary" size="sm" disabled={importing} onClick={() => void openImportDialog()}>

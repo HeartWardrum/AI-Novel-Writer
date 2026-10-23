@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/project-store'
 import { useStageStore, type StageSheet } from '../../stores/navigation/stage-store'
 import { ErrorBoundary } from '../ErrorBoundary'
 import AIPanel from '../panels/AIPanel'
+import ChatMessageRail from '../panels/agent/ChatMessageRail'
 import { Button } from '../ui/Button'
 import { SettingsPage } from './stage-pages'
 import StageWorldbook from './worldbook/StageWorldbook'
@@ -35,6 +36,8 @@ export default function ChatWorkbench({
               </div>
             </div>
           </ErrorBoundary>
+          {/* 迷你轴在居中对话列外侧的右边栏，不叠在气泡上 */}
+          <ChatMessageRail />
         </div>
 
         {chatOverlay === 'worldbook' && projectKey && (

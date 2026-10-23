@@ -10,6 +10,7 @@ import { applyM07CharacterPortraits, createM07Migration } from './m07-character-
 import { applyM08Worldbook, createM08Migration } from './m08-worldbook'
 import { applyM09AgentChat, createM09Migration } from './m09-agent-chat'
 import { applyM10WorldbookPrivateContent, createM10Migration } from './m10-worldbook-private-content'
+import { applyM11ProseTone, createM11Migration } from './m11-prose-tone'
 import { createM00Migration } from './m00-baseline'
 import { initializeLegacyBaselineSchema, applyBaselineTables } from './baseline-schema'
 import { ensureBaselineBlueprintTables } from './baseline-blueprint-schema'
@@ -17,7 +18,7 @@ import { SqliteSchemaAdapter, sqliteSchemaFingerprint } from './sqlite-schema-ad
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as typeof import('better-sqlite3')
-export const CURRENT_DESKTOP_SCHEMA_VERSION = 11
+export const CURRENT_DESKTOP_SCHEMA_VERSION = 12
 let installed: MigrationRegistry | undefined
 
 function installKnownDonorAvatarColumn(db: import('better-sqlite3').Database): void {
@@ -102,11 +103,17 @@ export function getDesktopMigrationRegistry(): MigrationRegistry {
     const m10 = createM10Migration({ database: native,
       verifyKnownSchema: db => worldbookPrivateFingerprints.has(sqliteSchemaFingerprint(native(db)))
         && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) })
-    installed = createMigrationRegistry([m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10], [
+    for (const db of references) db.transaction(() => applyM11ProseTone(db))()
+    const proseToneSchemas = schemas(12), proseToneFingerprints = new Set(proseToneSchemas.map(item => item.fingerprint))
+    const m11 = createM11Migration({ database: native,
+      verifyKnownSchema: db => proseToneFingerprints.has(sqliteSchemaFingerprint(native(db)))
+        && verifyM02CharacterIdentity(native(db)) && verifyM03ReviewCycle(native(db)) })
+    installed = createMigrationRegistry([m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11], [
       ...sourceSchemas, ...baselineSchemas.map(schema => ({ ...schema, version: 0 })),
       ...baselineSchemas, ...generationSchemas, ...identitySchemas,
       ...reviewCycleSchemas, ...importEffectSchemas, ...characterAssetSchemas, ...mergeSnapshotSchemas,
       ...portraitSchemas, ...worldbookSchemas, ...agentChatSchemas, ...worldbookPrivateSchemas,
+      ...proseToneSchemas,
     ])
     return installed
   } finally { reference.close(); donor.close() }

@@ -272,11 +272,48 @@ describe('direct chat sendMessage', () => {
     const messages = last?.requestDebug?.messages ?? []
     expect(messages.some(m => m.content.includes('【已定稿前文】'))).toBe(false)
     expect(messages.some(m => m.content.includes('【本章焦点】第 2 章'))).toBe(true)
+    expect(messages.some(m => m.content.includes('【本轮文风滤镜】'))).toBe(false)
     expect(last?.contextReceipt).toEqual({
       worldbookTitles: ['第 2 章'],
       continuityChapters: [],
     })
     expect(generateStream.mock.calls[0][0]).toEqual(messages)
+  })
+
+  it('injects project prose tone filter for author chat and skips it for default', async () => {
+    const { formatProseToneBlock } = await import('../../shared/prose-tone')
+    const project = demoProject()
+    useProjectStore.setState({
+      currentProject: {
+        ...project,
+        novelConfig: { ...project.novelConfig, proseTone: 'web-novel' },
+      },
+    })
+    const generateStream = vi.fn(async (_messages, callbacks) => {
+      callbacks.onDone?.('成稿')
+      return 'stream-tone-1'
+    })
+    useLLMStore.setState({ generateStream })
+
+    useAgentStore.getState().createConversation()
+    await useAgentStore.getState().sendMessage('写一段开场')
+
+    const withTone = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    const toneBlock = formatProseToneBlock('web-novel')
+    expect(toneBlock).toBeTruthy()
+    expect(withTone?.requestDebug?.messages.some(m => m.content === toneBlock)).toBe(true)
+    expect(withTone?.requestDebug?.meta.proseTone).toBe('web-novel')
+
+    useProjectStore.setState({
+      currentProject: {
+        ...project,
+        novelConfig: { ...project.novelConfig, proseTone: 'default' },
+      },
+    })
+    await useAgentStore.getState().sendMessage('再来一段')
+    const withoutTone = useAgentStore.getState().getActiveConversation()?.messages.at(-1)
+    expect(withoutTone?.requestDebug?.messages.some(m => m.content.includes('【本轮文风滤镜】'))).toBe(false)
+    expect(withoutTone?.requestDebug?.meta.proseTone).toBeUndefined()
   })
 
   it('continueCurrentChapter sends templated user message with optional hint', async () => {

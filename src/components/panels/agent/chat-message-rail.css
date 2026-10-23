@@ -1,0 +1,118 @@
+/* 本会话跳转迷你轴：默认右侧横线；悬停时在横线左侧展开全部固定宽摘要 */
+
+.chat-message-rail {
+  position: absolute;
+  top: 56px;
+  right: 6px;
+  bottom: 120px;
+  z-index: 8;
+  width: 28px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.chat-message-rail-track {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  width: 22px;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px 4px;
+  border-radius: 10px;
+  background: transparent;
+  scrollbar-width: none;
+  transition: width 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, padding 0.15s ease;
+}
+
+.chat-message-rail-track::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-message-rail:hover,
+.chat-message-rail:focus-within {
+  width: auto;
+  min-width: 28px;
+}
+
+.chat-message-rail:hover .chat-message-rail-track,
+.chat-message-rail:focus-within .chat-message-rail-track {
+  width: auto;
+  align-items: stretch;
+  padding: 8px 6px;
+  background: color-mix(in srgb, var(--surface, var(--color-sidebar, #fff)) 94%, transparent);
+  border: 1px solid var(--rule, var(--color-border));
+  box-shadow: -4px 0 16px color-mix(in srgb, var(--ink, var(--color-text, #000)) 8%, transparent);
+}
+
+.chat-message-rail-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  min-height: 22px;
+  margin: 0;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-2, var(--color-text-secondary));
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: right;
+  cursor: pointer;
+}
+
+.chat-message-rail-item:hover,
+.chat-message-rail-item:focus-visible {
+  background: color-mix(in srgb, var(--accent, var(--color-accent)) 12%, transparent);
+  color: var(--accent, var(--color-accent));
+  outline: none;
+}
+
+/* DeepSeek 式横线刻度 */
+.chat-message-rail-mark {
+  flex: none;
+  display: block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--ink-3, var(--color-text-muted, #888)) 75%, transparent);
+  transition: width 0.12s ease, background 0.12s ease;
+}
+
+.chat-message-rail-item:hover .chat-message-rail-mark,
+.chat-message-rail-item:focus-visible .chat-message-rail-mark {
+  width: 18px;
+  background: var(--accent, var(--color-accent));
+}
+
+/* 标签在横线左侧：悬停轨时全部显示，固定宽省略 */
+.chat-message-rail-label {
+  display: none;
+  flex: none;
+  width: 12em;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.chat-message-rail:hover .chat-message-rail-label,
+.chat-message-rail:focus-within .chat-message-rail-label {
+  display: block;
+}
+
+.chat-message-rail-item:hover .chat-message-rail-label,
+.chat-message-rail-item:focus-visible .chat-message-rail-label {
+  color: var(--accent, var(--color-accent));
+  font-weight: 600;
+}

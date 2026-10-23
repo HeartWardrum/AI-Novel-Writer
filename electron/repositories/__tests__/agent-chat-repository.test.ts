@@ -21,6 +21,10 @@ function conversation(partial?: Partial<PersistedAgentConversation>): PersistedA
       { id: 'm1', role: 'user', content: '说说灯塔', createdAt: now },
       { id: 'm2', role: 'assistant', content: '雾钟提前一刻响起。', createdAt: now + 1 },
     ],
+    ...(partial?.chatMode !== undefined ? { chatMode: partial.chatMode } : {}),
+    ...(partial?.characterEntryId !== undefined ? { characterEntryId: partial.characterEntryId } : {}),
+    ...(partial?.focusChapterNumber !== undefined ? { focusChapterNumber: partial.focusChapterNumber } : {}),
+    ...(partial?.proseTone !== undefined ? { proseTone: partial.proseTone } : {}),
   }
 }
 
@@ -77,18 +81,20 @@ describe('agent chat repository', () => {
     expect(AgentChatRepository.load()).toEqual({ conversations: [], activeConversationId: null })
   })
 
-  it('persists chatMode, characterEntryId, and focusChapterNumber on conversations', () => {
+  it('persists chatMode, characterEntryId, focusChapterNumber, and proseTone on conversations', () => {
     const now = Date.now()
     AgentChatRepository.upsert(conversation({
       chatMode: 'character',
       characterEntryId: 'wb:char:lin',
       focusChapterNumber: 7,
+      proseTone: 'web-novel',
       messages: [{ id: 'u1', role: 'user', content: '你好', createdAt: now }],
     }))
     const loaded = AgentChatRepository.load().conversations[0]
     expect(loaded.chatMode).toBe('character')
     expect(loaded.characterEntryId).toBe('wb:char:lin')
     expect(loaded.focusChapterNumber).toBe(7)
+    expect(loaded.proseTone).toBe('web-novel')
   })
 
   it('defaults missing chatMode to author when loading legacy message arrays', () => {
@@ -96,10 +102,12 @@ describe('agent chat repository', () => {
     expect(first.chatMode).toBe('author')
     expect(first.characterEntryId).toBeNull()
     expect(first.focusChapterNumber).toBe(1)
+    expect(first.proseTone).toBe('default')
     const loaded = AgentChatRepository.load().conversations[0]
     expect(loaded.chatMode).toBe('author')
     expect(loaded.characterEntryId).toBeNull()
     expect(loaded.focusChapterNumber).toBe(1)
+    expect(loaded.proseTone).toBe('default')
   })
 
   it('persists lightweight contextReceipt on assistant messages', () => {

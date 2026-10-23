@@ -12,6 +12,10 @@ import {
     type WritingLanguage,
 } from '../../src/shared/writing-language'
 import { resolveNarrativeThreadDormantThreshold } from '../../src/shared/narrative-thread'
+import {
+  normalizeProseToneId,
+  type ProseToneId,
+} from '../../src/shared/prose-tone'
 
 /** project_core 表行类型 */
 export interface ProjectCoreRow {
@@ -28,6 +32,7 @@ export interface ProjectCoreRow {
     plot_structure: string
     narrative_pov: string
     writing_style: string
+    prose_tone: string
     reference_works: string
     global_guidance: string
     golden_finger: string
@@ -57,6 +62,7 @@ export interface ProjectCoreData {
     plotStructure: string
     narrativePov: string
     writingStyle: string
+    proseTone: ProseToneId
     referenceWorks: string
     globalGuidance: string
     goldenFinger: string
@@ -112,6 +118,7 @@ function rowToData(row: ProjectCoreRow): ProjectCoreData {
         plotStructure: row.plot_structure,
         narrativePov: row.narrative_pov,
         writingStyle: row.writing_style,
+        proseTone: normalizeProseToneId(row.prose_tone),
         referenceWorks: row.reference_works,
         globalGuidance: row.global_guidance,
         goldenFinger: row.golden_finger,
@@ -173,6 +180,7 @@ export class ProjectCoreRepository {
             plotStructure: 'plot_structure',
             narrativePov: 'narrative_pov',
             writingStyle: 'writing_style',
+            proseTone: 'prose_tone',
             referenceWorks: 'reference_works',
             globalGuidance: 'global_guidance',
             goldenFinger: 'golden_finger',
@@ -192,9 +200,13 @@ export class ProjectCoreRepository {
             if (camel in data) {
                 setClauses.push(`${col} = ?`)
                 const value = (data as Record<string, unknown>)[camel]
-                values.push(camel === 'narrativeThreadDormantChapterThreshold'
-                    ? resolveNarrativeThreadDormantThreshold(value)
-                    : value)
+                values.push(
+                    camel === 'narrativeThreadDormantChapterThreshold'
+                      ? resolveNarrativeThreadDormantThreshold(value)
+                      : camel === 'proseTone'
+                        ? normalizeProseToneId(value)
+                        : value,
+                )
             }
         }
 

@@ -9,6 +9,7 @@ import { listWorldbookEntries } from '../../../services/worldbook-service'
 import type { WorldbookEntry } from '../../../shared/worldbook'
 import AgentMessage from './AgentMessage'
 import AgentInputBox from './AgentInputBox'
+import { AGENT_CHAT_NAVIGATE_EVENT } from './chat-message-navigate'
 import RecruitForm from './RecruitForm'
 import { formatRelativeTime } from '../../../utils/time'
 import { useLocaleStore } from '../../../stores/locale-store'
@@ -55,7 +56,6 @@ function RecruitToolbar() {
   const setChatMode = useAgentStore(s => s.setChatMode)
   const setCharacterEntryId = useAgentStore(s => s.setCharacterEntryId)
   const setFocusChapterNumber = useAgentStore(s => s.setFocusChapterNumber)
-  const continueCurrentChapter = useAgentStore(s => s.continueCurrentChapter)
   const activeConv = useAgentStore(s => {
     const id = s.activeConversationId
     return id ? (s.conversations.find(c => c.id === id) ?? null) : null
@@ -69,7 +69,6 @@ function RecruitToolbar() {
   const focusChapterNumber = activeConv?.focusChapterNumber && activeConv.focusChapterNumber >= 1
     ? Math.floor(activeConv.focusChapterNumber)
     : 1
-  const canContinueChapter = !busy && !modeLocked && chatMode === 'author'
 
   useEffect(() => {
     if (chatMode !== 'character' || recruitActive) {
@@ -237,19 +236,6 @@ function RecruitToolbar() {
         )}
         <button
           type="button"
-          disabled={!canContinueChapter}
-          onClick={() => { void continueCurrentChapter() }}
-          className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-          style={{
-            color: 'var(--color-accent-contrast, #fff)',
-            background: 'var(--color-accent)',
-          }}
-          data-testid="continue-chapter-button"
-        >
-          {text('续写本章', '续写本章')}
-        </button>
-        <button
-          type="button"
           disabled={busy}
           onClick={() => startRecruit()}
           className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
@@ -357,7 +343,7 @@ function EmptyState() {
           {text(APP_BRAND.zhName, APP_BRAND.enName)}
         </div>
         <div className="mb-3 pl-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          {text('你的 AI 创作助手 — 支持', 'Your AI creative assistant — use')} <code className="px-1 py-0.5 rounded text-[0.68rem]" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-accent)' }}>/</code> {text('命令', 'commands')}
+          {text('用对话写书：构思、讨论、改稿都行。', '用对话写书：构思、讨论、改稿都行。')}
         </div>
 
         <RecruitToolbar />
@@ -436,6 +422,12 @@ function ActiveConversation() {
     }
   }, [activeConv?.messages, generating, isAtBottom])
 
+  useEffect(() => {
+    const onNavigate = () => setIsAtBottom(false)
+    window.addEventListener(AGENT_CHAT_NAVIGATE_EVENT, onNavigate)
+    return () => window.removeEventListener(AGENT_CHAT_NAVIGATE_EVENT, onNavigate)
+  }, [])
+
   const handleScroll = () => {
     const el = scrollRef.current
     if (!el) return
@@ -457,7 +449,7 @@ function ActiveConversation() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="chat-message-scroll flex-1 overflow-y-auto px-4 py-4"
       >
         <div className="flex flex-col">
           {activeConv.messages
@@ -480,7 +472,7 @@ function ActiveConversation() {
             border: '1px solid var(--color-border)',
             color: 'var(--color-text-secondary)',
           }}
-          title={text('回到底部', 'Back to bottom')}
+          title={text('回到底部', '回到底部')}
           onMouseEnter={e => {
             e.currentTarget.style.borderColor = 'var(--color-accent)'
             e.currentTarget.style.color = 'var(--color-accent)'

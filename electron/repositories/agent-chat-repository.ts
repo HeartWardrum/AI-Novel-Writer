@@ -6,6 +6,10 @@ import type {
   PersistedAgentConversation,
   PersistedAgentMessage,
 } from '../../src/shared/agent-chat'
+import {
+  normalizeProseToneId,
+  type ProseToneId,
+} from '../../src/shared/prose-tone'
 
 interface ConversationRow {
   id: string
@@ -64,12 +68,13 @@ function parseFocusChapterNumber(raw: unknown): number | undefined {
   return n >= 1 ? n : undefined
 }
 
-/** messages_json：旧版纯数组；新版信封含 chatMode / characterEntryId / focusChapterNumber。 */
+/** messages_json：旧版纯数组；新版信封含 chatMode / characterEntryId / focusChapterNumber / proseTone。 */
 function parseMessagesPayload(raw: string): {
   messages: PersistedAgentMessage[]
   chatMode?: AgentChatMode
   characterEntryId?: string | null
   focusChapterNumber?: number
+  proseTone?: ProseToneId
 } {
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -83,11 +88,15 @@ function parseMessagesPayload(raw: string): {
       ? null
       : (typeof envelope.characterEntryId === 'string' ? envelope.characterEntryId : undefined)
     const focusChapterNumber = parseFocusChapterNumber(envelope.focusChapterNumber)
+    const proseTone = envelope.proseTone !== undefined
+      ? normalizeProseToneId(envelope.proseTone)
+      : undefined
     return {
       messages: parseMessageList(envelope.messages),
       ...(chatMode ? { chatMode } : {}),
       ...(characterEntryId !== undefined ? { characterEntryId } : {}),
       ...(focusChapterNumber !== undefined ? { focusChapterNumber } : {}),
+      ...(proseTone ? { proseTone } : {}),
     }
   } catch {
     return { messages: [] }
@@ -106,6 +115,7 @@ function rowToConversation(row: ConversationRow): PersistedAgentConversation {
     chatMode: payload.chatMode ?? 'author',
     characterEntryId: payload.characterEntryId ?? null,
     focusChapterNumber: payload.focusChapterNumber ?? 1,
+    proseTone: payload.proseTone ?? 'default',
   }
 }
 
@@ -132,6 +142,7 @@ function serializeConversationPayload(conversation: PersistedAgentConversation):
     chatMode: conversation.chatMode === 'character' ? 'character' : 'author',
     characterEntryId: conversation.characterEntryId ?? null,
     focusChapterNumber: focus,
+    proseTone: normalizeProseToneId(conversation.proseTone),
     messages,
   })
 }
@@ -164,6 +175,7 @@ export class AgentChatRepository {
       && conversation.focusChapterNumber >= 1
       ? Math.floor(conversation.focusChapterNumber)
       : 1
+    const proseTone = normalizeProseToneId(conversation.proseTone)
     const payload = {
       id: conversation.id,
       title: conversation.title.trim() || '对话',
@@ -173,6 +185,7 @@ export class AgentChatRepository {
         chatMode,
         characterEntryId,
         focusChapterNumber,
+        proseTone,
       }),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
@@ -196,6 +209,7 @@ export class AgentChatRepository {
       chatMode,
       characterEntryId,
       focusChapterNumber,
+      proseTone,
     }
   }
 

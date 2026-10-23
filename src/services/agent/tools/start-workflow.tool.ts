@@ -42,6 +42,20 @@ export const startWorkflowTool = buildAgentTool({
     if (!workflow) {
       return { success: false, content: '', error: text('缺少 workflow 参数', 'The workflow argument is required') }
     }
+
+    /** 写稿/审修流水线已从主界面移除；请作者用对话完成，避免模型再拉起旧流程。 */
+    const retiredChatShellWorkflows = new Set(['generate_draft', 'review', 'refine'])
+    if (retiredChatShellWorkflows.has(workflow)) {
+      return {
+        success: false,
+        content: '',
+        error: text(
+          '写稿、审稿、修稿流水线已停用。请直接在对话里写或改，不要再启动写章工作流。',
+          '写稿、审稿、修稿流水线已停用。请直接在对话里写或改，不要再启动写章工作流。',
+        ),
+      }
+    }
+
     const { project, projectSession } = requireAgentProject(context)
     const projectPath = project.path
     const generationModelId = context?.selectedModelId?.trim() || undefined

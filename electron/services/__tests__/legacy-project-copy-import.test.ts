@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
@@ -29,7 +29,7 @@ const Database = createRequire(import.meta.url)('better-sqlite3') as typeof impo
 const roots: string[] = []
 const preflightOptions = { maxNativePathCharacters: 4096 }
 const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
-function fixture(version: 'v100' | 'v100-official' | 'v110', charactersArch = '作者明确角色群像，与正文推断不同') {
+function fixture(version: 'v100' | 'v100-official' | 'v110', charactersArch = '浣滆€呮槑纭鑹茬兢鍍忥紝涓庢鏂囨帹鏂笉鍚?) {
   const base = path.resolve('.runtime/.cache/novel-quality-modernization/a11-copy-import')
   fs.mkdirSync(base, { recursive: true })
   const root = fs.mkdtempSync(path.join(base, 'attempt-')); roots.push(root)
@@ -40,18 +40,18 @@ function fixture(version: 'v100' | 'v100-official' | 'v110', charactersArch = '�
     db.pragma('journal_mode = WAL'); db.pragma('wal_autocheckpoint = 0')
     db.exec(fs.readFileSync(new URL(`./legacy-${version}-schema.sql`, import.meta.url), 'utf8'))
     db.prepare('INSERT INTO project_core(rowid,id,project_name,characters_arch) VALUES (?,?,?,?)')
-      .run(7, 'main', '合成旧项目', charactersArch)
-    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '合成章节正文\r\n原字节')
+      .run(7, 'main', '鍚堟垚鏃ч」鐩?, charactersArch)
+    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?)
     db.prepare('INSERT INTO drafts(id,chapter_number,version,content_id,word_count) VALUES (?,?,?,?,?)').run(19, 7, 1, 11, 876)
     for (const suffix of ['', '-wal', '-shm']) fs.copyFileSync(seed + suffix, path.join(legacy, 'vela.db') + suffix)
   } finally { db.close() }
   const sourceProjectId = randomUUID()
   fs.writeFileSync(path.join(legacy, 'project.json'), JSON.stringify({ schemaVersion: 1, kind: 'ai-novel-project', projectId: sourceProjectId, createdAt: '2026-09-01T00:00:00.000Z' }))
   fs.mkdirSync(path.join(legacy, 'prompts'))
-  fs.writeFileSync(path.join(legacy, 'prompts', 'author.txt'), '作者项目级提示词')
+  fs.writeFileSync(path.join(legacy, 'prompts', 'author.txt'), '浣滆€呴」鐩骇鎻愮ず璇?)
   fs.mkdirSync(path.join(legacy, 'skills'))
-  fs.writeFileSync(path.join(legacy, 'skills', 'author.md'), '作者项目级 Skill 原文')
-  fs.writeFileSync(path.join(source, 'outline.md'), '作者目录级大纲')
+  fs.writeFileSync(path.join(legacy, 'skills', 'author.md'), '浣滆€呴」鐩骇 Skill 鍘熸枃')
+  fs.writeFileSync(path.join(source, 'outline.md'), '浣滆€呯洰褰曠骇澶х翰')
   const sourceHashes = Object.fromEntries(['vela.db', 'vela.db-wal', 'vela.db-shm', 'project.json', 'prompts/author.txt', 'skills/author.md']
     .map(name => [name, hash(path.join(legacy, name))]))
   return { source, target, legacy, sourceProjectId, sourceHashes }
@@ -97,26 +97,26 @@ async function verifyFrozenLegacyConsumersAfterRestart(target: string, entry: st
           assert.equal(retry.committed, true)
           assert.equal(retry.error, 'PORTABLE_RUNTIME_FROZEN')
           assert.equal(RecoveryCandidateRepository.listPending().some(item =>
-            item.candidateId === 'old-candidate' && item.visibleText === '旧候选正文' && !item.sourceCurrent), true)
-          assert.throws(() => RecoveryCandidateRepository.updatePending('old-candidate', '覆盖正文'), /PORTABLE_RUNTIME_FROZEN/)
+            item.candidateId === 'old-candidate' && item.visibleText === '鏃у€欓€夋鏂? && !item.sourceCurrent), true)
+          assert.throws(() => RecoveryCandidateRepository.updatePending('old-candidate', '瑕嗙洊姝ｆ枃'), /PORTABLE_RUNTIME_FROZEN/)
           assert.throws(() => RecoveryCandidateRepository.resolve('old-candidate', 'discarded'), /PORTABLE_RUNTIME_FROZEN/)
           db.exec('SAVEPOINT mixed_candidates')
           try {
-            const source = { chapterNumber: 8, title: '第八章', role: '推进', purpose: '继续',
-              keyEvents: '新线索', characters: [], suspenseHook: '', userGuidance: '' }
+            const source = { chapterNumber: 8, title: '绗叓绔?, role: '鎺ㄨ繘', purpose: '缁х画',
+              keyEvents: '鏂扮嚎绱?, characters: [], suspenseHook: '', userGuidance: '' }
             BlueprintRepository.upsert({ ...source, notes: '', notesUpdatedAt: '' })
             const fresh = RecoveryCandidateRepository.record({ runId: 'new-run', stepId: 'generate-draft',
               projectId: 'current-project', chapterNumber: 8, chapterTitle: source.title, source, sourceDraft: null,
-              visibleText: '新候选正文', failureCode: 'NETWORK_ERROR', failureReason: 'test' })
+              visibleText: '鏂板€欓€夋鏂?, failureCode: 'NETWORK_ERROR', failureReason: 'test' })
             assert.deepEqual(RecoveryCandidateRepository.listPending().map(item => ({
               candidateId: item.candidateId, visibleText: item.visibleText, sourceCurrent: item.sourceCurrent,
             })), [
-              { candidateId: 'old-candidate', visibleText: '旧候选正文', sourceCurrent: false },
-              { candidateId: fresh.candidateId, visibleText: '新候选正文', sourceCurrent: true },
+              { candidateId: 'old-candidate', visibleText: '鏃у€欓€夋鏂?, sourceCurrent: false },
+              { candidateId: fresh.candidateId, visibleText: '鏂板€欓€夋鏂?, sourceCurrent: true },
             ])
-            assert.equal(RecoveryCandidateRepository.updatePending(fresh.candidateId, '可编辑正文').visibleText, '可编辑正文')
+            assert.equal(RecoveryCandidateRepository.updatePending(fresh.candidateId, '鍙紪杈戞鏂?).visibleText, '鍙紪杈戞鏂?)
             db.prepare('UPDATE recovery_candidates SET source_hash=? WHERE candidate_id=?').run('bad', fresh.candidateId)
-            assert.throws(() => RecoveryCandidateRepository.listPending(), /恢复候选完整性校验失败/)
+            assert.throws(() => RecoveryCandidateRepository.listPending(), /鎭㈠鍊欓€夊畬鏁存€ф牎楠屽け璐?)
           } finally { db.exec('ROLLBACK TO mixed_candidates; RELEASE mixed_candidates') }
           assert.equal(ImportRunRepository.get('old-import')?.id, 'old-import')
           assert.equal(ImportRunRepository.listResumable().some(item => item.id === 'old-import'), false)
@@ -204,7 +204,7 @@ async function terminateImportAt(f: ReturnType<typeof fixture>, phase: 'sqlite-c
 }
 afterEach(() => { closeProjectDatabase(); for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }) })
 
-it.each(['v100', 'v110'] as const)('%s 有旧角色原文但无角色卡时拒绝发布且保留源', async version => {
+it.each(['v100', 'v110'] as const)('%s 鏈夋棫瑙掕壊鍘熸枃浣嗘棤瑙掕壊鍗℃椂鎷掔粷鍙戝竷涓斾繚鐣欐簮', async version => {
   const f = fixture(version), before = sourceState(f)
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
     .toMatchObject({ state: 'blocked', code: 'LEGACY_IMPORT_ROSTER_UNAVAILABLE' })
@@ -216,7 +216,7 @@ it.each(['v100', 'v110'] as const)('%s 有旧角色原文但无角色卡时拒�
   const preserved = new Database(staging, { readonly: true, fileMustExist: true })
   try {
     expect(preserved.prepare("SELECT legacy_markdown FROM character_roster_meta WHERE id='main'").pluck().get())
-      .toBe('作者明确角色群像，与正文推断不同')
+      .toBe('浣滆€呮槑纭鑹茬兢鍍忥紝涓庢鏂囨帹鏂笉鍚?)
   } finally { preserved.close() }
 })
 
@@ -224,10 +224,10 @@ function addLegacyCards(f: ReturnType<typeof fixture>) {
   const source = new Database(path.join(f.legacy, 'vela.db'))
   try {
     source.prepare(`INSERT INTO characters(rowid,name,role,background,relationships,cs_location,cs_updated_at_chapter)
-      VALUES (?,?,?,?,?,?,?)`).run(44, '乙', 'protagonist', '旧角色资料\r\n原文',
-      JSON.stringify([{ target: '甲', relation: '同门' }]), '旧山门', 0)
+      VALUES (?,?,?,?,?,?,?)`).run(44, '涔?, 'protagonist', '鏃ц鑹茶祫鏂橽r\n鍘熸枃',
+      JSON.stringify([{ target: '鐢?, relation: '鍚岄棬' }]), '鏃у北闂?, 0)
     source.prepare('INSERT INTO characters(rowid,name,role,background) VALUES (?,?,?,?)')
-      .run(45, '甲', 'supporting', '同门的作者设定')
+      .run(45, '鐢?, 'supporting', '鍚岄棬鐨勪綔鑰呰瀹?)
   } finally { source.close() }
 }
 
@@ -260,7 +260,7 @@ async function markLegacyCardsReady(f: ReturnType<typeof fixture>, officialV100 
   return meta
 }
 
-it('v1.1 ready 旧卡在离线副本内绑定唯一 PK 关系并保持作者投影', async () => {
+it('v1.1 ready 鏃у崱鍦ㄧ绾垮壇鏈唴缁戝畾鍞竴 PK 鍏崇郴骞朵繚鎸佷綔鑰呮姇褰?, async () => {
   const f = fixture('v110', '')
   addLegacyCards(f)
   const oldMeta = await markLegacyCardsReady(f)
@@ -272,15 +272,15 @@ it('v1.1 ready 旧卡在离线副本内绑定唯一 PK 关系并保持作者投�
   try {
     const roster = CharacterRosterRepository.read(db)
     expect(roster).toMatchObject({ migrationState: 'ready', status: 'ready' })
-    const owner = roster.entries.find(entry => entry.name === '乙')!
-    const target = roster.entries.find(entry => entry.name === '甲')!
-    expect(owner.relationships).toEqual([{ target: '甲', targetCharacterId: target.characterId, relation: '同门' }])
+    const owner = roster.entries.find(entry => entry.name === '涔?)!
+    const target = roster.entries.find(entry => entry.name === '鐢?)!
+    expect(owner.relationships).toEqual([{ target: '鐢?, targetCharacterId: target.characterId, relation: '鍚岄棬' }])
     expect(db.prepare('SELECT source_character_id,target_character_id,relation,provenance_json FROM character_relationships').all())
-      .toEqual([{ source_character_id: owner.characterId, target_character_id: target.characterId, relation: '同门',
+      .toEqual([{ source_character_id: owner.characterId, target_character_id: target.characterId, relation: '鍚岄棬',
         provenance_json: expect.any(String) }])
     const edge = db.prepare('SELECT provenance_json FROM character_relationships').pluck().get() as string
     expect(JSON.parse(edge)).toMatchObject({ kind: 'legacy', sourceKey: 'legacy:characters:0:relationships:0',
-      sourceHash: createHash('sha256').update('[{"target":"甲","relation":"同门"}]').digest('hex') })
+      sourceHash: createHash('sha256').update('[{"target":"鐢?,"relation":"鍚岄棬"}]').digest('hex') })
     expect(db.prepare('SELECT projection_hash,fact_hash FROM character_roster_meta WHERE id=?').get('main'))
       .toEqual({ projection_hash: oldMeta.projection_hash, fact_hash: oldMeta.fact_hash })
     expect(db.prepare('SELECT characters_arch FROM project_core WHERE id=?').pluck().get('main')).toBe(oldMeta.characters_arch)
@@ -291,12 +291,12 @@ it('v1.1 ready 旧卡在离线副本内绑定唯一 PK 关系并保持作者投�
   expect(sourceState(f)).toEqual(before)
 })
 
-it.each(['v100-official', 'v110'] as const)('%s 同一角色对的不同关系完整导入并重建目标投影', async version => {
+it.each(['v100-official', 'v110'] as const)('%s 鍚屼竴瑙掕壊瀵圭殑涓嶅悓鍏崇郴瀹屾暣瀵煎叆骞堕噸寤虹洰鏍囨姇褰?, async version => {
   const f = fixture(version, '')
   addLegacyCards(f)
-  const relationships = JSON.stringify([{ target: '甲', relation: '同门' }, { target: '甲', relation: '友人' }])
+  const relationships = JSON.stringify([{ target: '鐢?, relation: '鍚岄棬' }, { target: '鐢?, relation: '鍙嬩汉' }])
   const old = new Database(path.join(f.legacy, 'vela.db'))
-  try { old.prepare('UPDATE characters SET relationships=? WHERE name=?').run(relationships, '乙') }
+  try { old.prepare('UPDATE characters SET relationships=? WHERE name=?').run(relationships, '涔?) }
   finally { old.close() }
   const oldMeta = await markLegacyCardsReady(f, version === 'v100-official')
   const before = sourceState(f)
@@ -307,12 +307,12 @@ it.each(['v100-official', 'v110'] as const)('%s 同一角色对的不同关系�
   try {
     const roster = CharacterRosterRepository.read(db)
     expect(roster).toMatchObject({ migrationState: 'ready', status: 'ready' })
-    const owner = roster.entries.find(entry => entry.name === '乙')!
-    const target = roster.entries.find(entry => entry.name === '甲')!
+    const owner = roster.entries.find(entry => entry.name === '涔?)!
+    const target = roster.entries.find(entry => entry.name === '鐢?)!
     expect(owner.relationships).toHaveLength(2)
     expect(owner.relationships).toEqual(expect.arrayContaining([
-      { target: '甲', targetCharacterId: target.characterId, relation: '友人' },
-      { target: '甲', targetCharacterId: target.characterId, relation: '同门' },
+      { target: '鐢?, targetCharacterId: target.characterId, relation: '鍙嬩汉' },
+      { target: '鐢?, targetCharacterId: target.characterId, relation: '鍚岄棬' },
     ]))
     expect(db.prepare('SELECT COUNT(DISTINCT relationship_id) FROM character_relationships').pluck().get()).toBe(2)
     expect(db.prepare('SELECT relationships FROM characters WHERE character_id=?').pluck().get(owner.characterId)).toBe(relationships)
@@ -325,7 +325,7 @@ it.each(['v100-official', 'v110'] as const)('%s 同一角色对的不同关系�
   expect(sourceState(f)).toEqual(before)
 })
 
-it('官方 v1.0 ready 旧卡在只读验源后导入，源和旧副本的 DDL、行、已有 DB/WAL 数据不变', async () => {
+it('瀹樻柟 v1.0 ready 鏃у崱鍦ㄥ彧璇婚獙婧愬悗瀵煎叆锛屾簮鍜屾棫鍓湰鐨?DDL銆佽銆佸凡鏈?DB/WAL 鏁版嵁涓嶅彉', async () => {
   const f = fixture('v100-official', '')
   addLegacyCards(f)
   await markLegacyCardsReady(f, true)
@@ -355,12 +355,12 @@ it('官方 v1.0 ready 旧卡在只读验源后导入，源和旧副本的 DDL、
   finally { db.close() }
 })
 
-it('官方 v1.0 旧 ready 标签不能洗白已篡改的原始关系', async () => {
+it('瀹樻柟 v1.0 鏃?ready 鏍囩涓嶈兘娲楃櫧宸茬鏀圭殑鍘熷鍏崇郴', async () => {
   const f = fixture('v100-official', '')
   addLegacyCards(f)
   await markLegacyCardsReady(f, true)
   const old = new Database(path.join(f.legacy, 'vela.db'))
-  try { old.prepare("UPDATE characters SET relationships=? WHERE name='乙'").run('[{"target":"甲","relation":"改写后关系"}]') }
+  try { old.prepare("UPDATE characters SET relationships=? WHERE name='涔?").run('[{"target":"鐢?,"relation":"鏀瑰啓鍚庡叧绯?}]') }
   finally { old.close() }
   const before = sourceState(f)
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
@@ -372,14 +372,14 @@ it('官方 v1.0 旧 ready 标签不能洗白已篡改的原始关系', async () 
     .filter(name => name.startsWith('.roster-check-'))).toEqual([])
 })
 
-it.each(['missing', 'stale-source', 'ambiguous', 'missing-origin'] as const)('v1.1 ready 旧关系 %s endpoint 阻断发布且不写稳定边', async problem => {
+it.each(['missing', 'stale-source', 'ambiguous', 'missing-origin'] as const)('v1.1 ready 鏃у叧绯?%s endpoint 闃绘柇鍙戝竷涓斾笉鍐欑ǔ瀹氳竟', async problem => {
   const f = fixture('v110', '')
   addLegacyCards(f)
   await markLegacyCardsReady(f)
   if (problem === 'missing' || problem === 'stale-source') {
     const old = new Database(path.join(f.legacy, 'vela.db'))
     try { old.prepare('UPDATE characters SET relationships=? WHERE name=?')
-      .run(problem === 'missing' ? '[{"target":"不存在","relation":"同门"}]' : '[{"target":"甲","relation":"旧快照以外的新关系"}]', '乙') } finally { old.close() }
+      .run(problem === 'missing' ? '[{"target":"涓嶅瓨鍦?,"relation":"鍚岄棬"}]' : '[{"target":"鐢?,"relation":"鏃у揩鐓т互澶栫殑鏂板叧绯?}]', '涔?) } finally { old.close() }
   }
   const before = sourceState(f)
   const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions,
@@ -408,11 +408,11 @@ it.each(['missing', 'stale-source', 'ambiguous', 'missing-origin'] as const)('v1
   finally { staging.close() }
 })
 
-it.each(['v100', 'v110'] as const)('%s 非空旧角色卡与关系确定性采用，生产保存重开不回写源', async version => {
+it.each(['v100', 'v110'] as const)('%s 闈炵┖鏃ц鑹插崱涓庡叧绯荤‘瀹氭€ч噰鐢紝鐢熶骇淇濆瓨閲嶅紑涓嶅洖鍐欐簮', async version => {
   const f = fixture(version, '')
   addLegacyCards(f)
   const old = new Database(path.join(f.legacy, 'vela.db'))
-  try { old.prepare('INSERT INTO blueprints(chapter_number,characters) VALUES(?,?)').run(7, '["乙","甲","章级待出场"]') }
+  try { old.prepare('INSERT INTO blueprints(chapter_number,characters) VALUES(?,?)').run(7, '["涔?,"鐢?,"绔犵骇寰呭嚭鍦?]') }
   finally { old.close() }
   const before = sourceState(f)
   let preservedFacts: unknown[] = []
@@ -434,28 +434,28 @@ it.each(['v100', 'v110'] as const)('%s 非空旧角色卡与关系确定性采�
   const roster = CharacterRosterRepository.read()
   expect(roster).toMatchObject({ status: 'ready', migrationState: 'ready', identityRevision: 0 })
   expect(roster.entries).toHaveLength(2)
-  const protagonist = roster.entries.find(entry => entry.name === '乙')!
-  const companion = roster.entries.find(entry => entry.name === '甲')!
+  const protagonist = roster.entries.find(entry => entry.name === '涔?)!
+  const companion = roster.entries.find(entry => entry.name === '鐢?)!
   expect(protagonist.characterId).toBeTruthy()
   expect(companion.characterId).toBeTruthy()
-  expect(protagonist).toMatchObject({ background: '旧角色资料\r\n原文',
-    currentState: { location: '旧山门', updatedAtChapter: 0 },
-    relationships: [{ target: '甲', targetCharacterId: companion.characterId, relation: '同门' }] })
+  expect(protagonist).toMatchObject({ background: '鏃ц鑹茶祫鏂橽r\n鍘熸枃',
+    currentState: { location: '鏃у北闂?, updatedAtChapter: 0 },
+    relationships: [{ target: '鐢?, targetCharacterId: companion.characterId, relation: '鍚岄棬' }] })
   expect(db.prepare("SELECT legacy_markdown FROM character_roster_meta WHERE id='main'").pluck().get()).toBe('')
-  expect(ProjectCoreRepository.get()!.charactersArch).toContain('甲（同门）')
+  expect(ProjectCoreRepository.get()!.charactersArch).toContain('鐢诧紙鍚岄棬锛?)
   const relation = db.prepare('SELECT * FROM character_relationships').get() as { provenance_json: string; approval_id: string }
   expect(JSON.parse(relation.provenance_json)).toMatchObject({ kind: 'legacy', sourceKey: 'legacy:characters:0:relationships:0', migration: 'offline-project-copy' })
   expect(relation.approval_id).toBe('legacy-offline-identity-binding')
-  expect(db.prepare('SELECT characters FROM blueprints WHERE chapter_number=7').pluck().get()).toBe('["乙","甲","章级待出场"]')
+  expect(db.prepare('SELECT characters FROM blueprints WHERE chapter_number=7').pluck().get()).toBe('["涔?,"鐢?,"绔犵骇寰呭嚭鍦?]')
   expect(db.prepare('SELECT raw_value,resolved_character_id FROM character_identity_proposals WHERE owner_character_id IS NULL ORDER BY source_key').all())
-    .toEqual([{ raw_value: '乙', resolved_character_id: protagonist.characterId },
-      { raw_value: '甲', resolved_character_id: companion.characterId }, { raw_value: '章级待出场', resolved_character_id: null }])
+    .toEqual([{ raw_value: '涔?, resolved_character_id: protagonist.characterId },
+      { raw_value: '鐢?, resolved_character_id: companion.characterId }, { raw_value: '绔犵骇寰呭嚭鍦?, resolved_character_id: null }])
   expect(db.prepare("SELECT COUNT(*) FROM character_identity_approvals WHERE operation_id LIKE 'legacy-cards-adoption:%'").pluck().get()).toBe(1)
   expect(db.prepare('SELECT COUNT(*) FROM llm_calls').pluck().get()).toBe(0)
   expect(db.prepare('SELECT COUNT(*) FROM generation_runs').pluck().get()).toBe(0)
   const fingerprint = 'a'.repeat(64)
   const writing = buildGenerationSourceBinding({ db, projectStorageRoot: path.join(f.target, '.ai-novel'),
-    globalDataRoot: path.dirname(f.source), readBuiltinPrompt: () => JSON.stringify({ key: 'draft', content: '测试写作契约', systemRole: '测试' }) },
+    globalDataRoot: path.dirname(f.source), readBuiltinPrompt: () => JSON.stringify({ key: 'draft', content: '娴嬭瘯鍐欎綔濂戠害', systemRole: '娴嬭瘯' }) },
   { projectId: result.projectId, epoch: 'test-import-session', operation: 'chapter-draft', chapterNumber: 7,
     selectedDraftIds: [], selectedFinalizedDraftIds: [], promptKeys: ['draft'], skillStages: [],
     modelReceipt: { modelId: 'fixture', provider: 'openai', protocol: 'openai', modelName: 'fixture',
@@ -464,30 +464,30 @@ it.each(['v100', 'v110'] as const)('%s 非空旧角色卡与关系确定性采�
         subjectFingerprint: fingerprint, contextWindowTokens: 8000, maxOutputTokens: 1000, reasoning: false, structuredOutput: false, usage: true } },
     policy: { version: 'fixture', maxPhysicalRequests: 1 }, outputContract: 'visible-text' })
   expect(JSON.parse(writing.materials.find(item => item.ref.sourceId === 'character-relationships:all')!.text))
-    .toMatchObject([{ source_character_id: protagonist.characterId, target_character_id: companion.characterId, relation: '同门' }])
+    .toMatchObject([{ source_character_id: protagonist.characterId, target_character_id: companion.characterId, relation: '鍚岄棬' }])
   const saved = commitAuthorCharacterRoster(db, { operationId: 'imported-author-edit', schemaVersion: 1,
     intent: 'manual_edit', expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
-    entries: roster.entries.map(entry => entry.characterId === protagonist.characterId ? { ...entry, notes: '新版保存笔记' } : entry),
+    entries: roster.entries.map(entry => entry.characterId === protagonist.characterId ? { ...entry, notes: '鏂扮増淇濆瓨绗旇' } : entry),
   }, { projectId: result.projectId, epoch: 'test-import-session' }, () => {})
   closeProjectDatabase()
   initProjectDatabase(f.target)
   expect(CharacterRosterRepository.read()).toEqual(saved.snapshot)
-  expect(CharacterRosterRepository.read().entries.find(entry => entry.characterId === protagonist.characterId)?.notes).toBe('新版保存笔记')
+  expect(CharacterRosterRepository.read().entries.find(entry => entry.characterId === protagonist.characterId)?.notes).toBe('鏂扮増淇濆瓨绗旇')
   expect(getProjectDb()!.prepare("SELECT COUNT(*) FROM character_identity_approvals WHERE operation_id LIKE 'legacy-cards-adoption:%'").pluck().get()).toBe(1)
   expect(sourceState(f)).toEqual(before)
 })
 
 it.each([
-  '与甲是同门', '[{"target":" 甲","relation":"同门"}]', '[{"target":"不存在","relation":"同门"}]',
-  '[{"target":"乙","relation":"自指"}]', '[{"target":"甲","relation":""}]',
-  '[{"target":"甲","relation":"同门","confidence":1}]',
-  '[{"target":"甲","relation":"同门"},{"target":"甲","relation":"同门"}]',
-  '{"target":"甲","relation":"同门"}',
-])('旧卡关系不满足完整主键边契约时阻断且保全：%s', async relationships => {
+  '涓庣敳鏄悓闂?, '[{"target":" 鐢?,"relation":"鍚岄棬"}]', '[{"target":"涓嶅瓨鍦?,"relation":"鍚岄棬"}]',
+  '[{"target":"涔?,"relation":"鑷寚"}]', '[{"target":"鐢?,"relation":""}]',
+  '[{"target":"鐢?,"relation":"鍚岄棬","confidence":1}]',
+  '[{"target":"鐢?,"relation":"鍚岄棬"},{"target":"鐢?,"relation":"鍚岄棬"}]',
+  '{"target":"鐢?,"relation":"鍚岄棬"}',
+])('鏃у崱鍏崇郴涓嶆弧瓒冲畬鏁翠富閿竟濂戠害鏃堕樆鏂笖淇濆叏锛?s', async relationships => {
   const f = fixture('v110', '')
   addLegacyCards(f)
   const old = new Database(path.join(f.legacy, 'vela.db'))
-  try { old.prepare('UPDATE characters SET relationships=? WHERE name=?').run(relationships, '乙') }
+  try { old.prepare('UPDATE characters SET relationships=? WHERE name=?').run(relationships, '涔?) }
   finally { old.close() }
   const before = sourceState(f)
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
@@ -497,14 +497,14 @@ it.each([
   const attempt = fs.readdirSync(path.dirname(f.target)).find(name => name.startsWith('.new.legacy-import-'))!
   const staging = new Database(path.join(path.dirname(f.target), attempt, 'target', '.ai-novel', 'project.db'), { readonly: true })
   try {
-    expect(staging.prepare('SELECT relationships FROM characters WHERE name=?').pluck().get('乙')).toBe(relationships)
+    expect(staging.prepare('SELECT relationships FROM characters WHERE name=?').pluck().get('涔?)).toBe(relationships)
     expect(staging.prepare('SELECT COUNT(*) FROM character_relationships').pluck().get()).toBe(0)
     expect(staging.prepare('SELECT COUNT(*) FROM character_identity_approvals').pluck().get()).toBe(0)
     expect(CharacterRosterRepository.read(staging).migrationState).toBe('legacy_cards_preserved')
   } finally { staging.close() }
 })
 
-it.each(['v100', 'v110'] as const)('%s 非空旧原文与卡片无法证明无损时仍拒绝发布并保留 staging', async version => {
+it.each(['v100', 'v110'] as const)('%s 闈炵┖鏃у師鏂囦笌鍗＄墖鏃犳硶璇佹槑鏃犳崯鏃朵粛鎷掔粷鍙戝竷骞朵繚鐣?staging', async version => {
   const f = fixture(version)
   addLegacyCards(f)
   const before = sourceState(f)
@@ -516,32 +516,32 @@ it.each(['v100', 'v110'] as const)('%s 非空旧原文与卡片无法证明无�
   const staging = new Database(path.join(path.dirname(f.target), attempt, 'target', '.ai-novel', 'project.db'), { readonly: true })
   try {
     expect(CharacterRosterRepository.read(staging)).toMatchObject({ migrationState: 'legacy_cards_preserved', status: 'inconsistent',
-      legacyMarkdown: '作者明确角色群像，与正文推断不同' })
+      legacyMarkdown: '浣滆€呮槑纭鑹茬兢鍍忥紝涓庢鏂囨帹鏂笉鍚? })
     expect(staging.prepare('SELECT COUNT(*) FROM characters').pluck().get()).toBe(2)
-    expect(staging.prepare('SELECT relationships FROM characters WHERE name=?').pluck().get('乙'))
-      .toBe('[{"target":"甲","relation":"同门"}]')
+    expect(staging.prepare('SELECT relationships FROM characters WHERE name=?').pluck().get('涔?))
+      .toBe('[{"target":"鐢?,"relation":"鍚岄棬"}]')
     expect(staging.prepare('SELECT raw_value,resolved_character_id FROM character_identity_proposals').all())
-      .toEqual([{ raw_value: '{"target":"甲","relation":"同门"}', resolved_character_id: null }])
+      .toEqual([{ raw_value: '{"target":"鐢?,"relation":"鍚岄棬"}', resolved_character_id: null }])
     expect(staging.prepare('SELECT COUNT(*) FROM character_identity_approvals').pluck().get()).toBe(0)
   } finally { staging.close() }
 })
 
-it.each(['v100', 'v110'] as const)('%s 合法空角色名单的离线完整副本含 WAL、作者配置和正文', async version => {
+it.each(['v100', 'v110'] as const)('%s 鍚堟硶绌鸿鑹插悕鍗曠殑绂荤嚎瀹屾暣鍓湰鍚?WAL銆佷綔鑰呴厤缃拰姝ｆ枃', async version => {
   const f = fixture(version, '')
   const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })
   expect(result, JSON.stringify(result)).toMatchObject({ state: 'ready', targetRoot: f.target })
   if (result.state !== 'ready') return
   expect(result.projectId).not.toBe(f.sourceProjectId)
   expect(fs.existsSync(path.join(f.target, '.vela'))).toBe(false)
-  expect(fs.readFileSync(path.join(f.target, 'outline.md'), 'utf8')).toBe('作者目录级大纲')
-  expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'prompts', 'author.txt'), 'utf8')).toBe('作者项目级提示词')
-  expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'skills', 'author.md'), 'utf8')).toBe('作者项目级 Skill 原文')
-  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(11)
+  expect(fs.readFileSync(path.join(f.target, 'outline.md'), 'utf8')).toBe('浣滆€呯洰褰曠骇澶х翰')
+  expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'prompts', 'author.txt'), 'utf8')).toBe('浣滆€呴」鐩骇鎻愮ず璇?)
+  expect(fs.readFileSync(path.join(f.target, '.ai-novel', 'skills', 'author.md'), 'utf8')).toBe('浣滆€呴」鐩骇 Skill 鍘熸枃')
+  expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(12)
   const db = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
     expect(db.prepare('SELECT characters_arch FROM project_core WHERE id=?').pluck().get('main')).toBe('')
     expect(db.prepare("SELECT migration_state FROM character_roster_meta WHERE id='main'").pluck().get()).toBe('empty')
-    expect(db.prepare('SELECT body FROM contents WHERE id=11').pluck().get()).toBe('合成章节正文\r\n原字节')
+    expect(db.prepare('SELECT body FROM contents WHERE id=11').pluck().get()).toBe('鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?)
     expect(db.prepare('SELECT content_id FROM drafts WHERE id=19').pluck().get()).toBe(11)
   } finally { db.close() }
   expect(Object.fromEntries(Object.keys(f.sourceHashes).map(name => [name, hash(path.join(f.legacy, name))]))).toEqual(f.sourceHashes)
@@ -550,11 +550,11 @@ it.each(['v100', 'v110'] as const)('%s 合法空角色名单的离线完整副�
 
 it.each([false, true])('preserves official legacy trash as inactive files (populated=%s)', async populated => {
   const f = fixture('v100-official', '')
-  const relative = path.join('trash', 'clear-2026-09-01T00-00-00-000Z', '第1章 旧正文.txt')
+  const relative = path.join('trash', 'clear-2026-09-01T00-00-00-000Z', '绗?绔?鏃ф鏂?txt')
   fs.mkdirSync(path.join(f.legacy, 'trash'))
   if (populated) {
     fs.mkdirSync(path.dirname(path.join(f.legacy, relative)))
-    fs.writeFileSync(path.join(f.legacy, relative), '已清空旧章节\r\n只保留字节')
+    fs.writeFileSync(path.join(f.legacy, relative), '宸叉竻绌烘棫绔犺妭\r\n鍙繚鐣欏瓧鑺?)
   }
   const before = sourceState(f)
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
@@ -577,10 +577,10 @@ it.each([false, true])('preserves official legacy trash as inactive files (popul
   expect(fs.existsSync(f.target + '-unknown')).toBe(false)
 })
 
-it('旧项目根内的真实知识原文变成可读项目副本，片段不能冒充全文', async () => {
+it('鏃ч」鐩牴鍐呯殑鐪熷疄鐭ヨ瘑鍘熸枃鍙樻垚鍙椤圭洰鍓湰锛岀墖娈典笉鑳藉啋鍏呭叏鏂?, async () => {
   const f = fixture('v110', '')
-  const original = path.join(f.source, '创作资料.txt')
-  const content = '完整原文第一段。\n\n完整原文第二段只存在于旧项目文件。'
+  const original = path.join(f.source, '鍒涗綔璧勬枡.txt')
+  const content = '瀹屾暣鍘熸枃绗竴娈点€俓n\n瀹屾暣鍘熸枃绗簩娈靛彧瀛樺湪浜庢棫椤圭洰鏂囦欢銆?
   fs.writeFileSync(original, content)
   const connection = await lance.connect(path.join(f.legacy, 'lancedb'))
   const tables: lance.Table[] = []
@@ -589,12 +589,12 @@ it('旧项目根内的真实知识原文变成可读项目副本，片段不能�
       new Field('text', new Utf8()), new Field('chunkIndex', new Int32()), new Field('totalChunks', new Int32()),
       new Field('importedAt', new Utf8()), new Field('corpusKind', new Utf8())]
     tables.push(await connection.createTable('chunks', [
-      { id: 'old-chunk', docId: 'old-doc', fileName: '创作资料.txt', text: '完整原文第一段。',
+      { id: 'old-chunk', docId: 'old-doc', fileName: '鍒涗綔璧勬枡.txt', text: '瀹屾暣鍘熸枃绗竴娈点€?,
         chunkIndex: 0, totalChunks: 1, importedAt: '2026-09-13', corpusKind: 'reference' },
     ],
     { schema: new Schema(fields) }))
     tables.push(await connection.createTable('documents', [
-      { id: 'old-doc', fileName: '创作资料.txt', filePath: original,
+      { id: 'old-doc', fileName: '鍒涗綔璧勬枡.txt', filePath: original,
         importedAt: '2026-09-13', chunkCount: 1, corpusKind: 'reference' },
     ]))
   } finally { for (const table of tables) table.close(); connection.close() }
@@ -602,7 +602,7 @@ it('旧项目根内的真实知识原文变成可读项目副本，片段不能�
   const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })
   expect(result, JSON.stringify(result)).toMatchObject({ state: 'ready' })
   expect(hash(original)).toBe(originalHash)
-  expect(hash(path.join(f.target, '创作资料.txt'))).toBe(originalHash)
+  expect(hash(path.join(f.target, '鍒涗綔璧勬枡.txt'))).toBe(originalHash)
   initProjectDatabase(f.target)
   try {
     const documents = await listDocuments(f.target)
@@ -613,24 +613,24 @@ it('旧项目根内的真实知识原文变成可读项目副本，片段不能�
   } finally { closeConnection(f.target) }
 })
 
-it.each(['outside', 'missing'] as const)('旧知识原文引用 %s 时阻断发布且不读取旧项目外文件', async reference => {
+it.each(['outside', 'missing'] as const)('鏃х煡璇嗗師鏂囧紩鐢?%s 鏃堕樆鏂彂甯冧笖涓嶈鍙栨棫椤圭洰澶栨枃浠?, async reference => {
   const f = fixture('v110')
-  const filePath = reference === 'outside' ? path.join(path.dirname(f.source), '外部资料.txt')
-    : path.join(f.source, '缺失资料.txt')
-  if (reference === 'outside') fs.writeFileSync(filePath, '只在旧项目外的合成资料，不得读取或转入新项目。')
+  const filePath = reference === 'outside' ? path.join(path.dirname(f.source), '澶栭儴璧勬枡.txt')
+    : path.join(f.source, '缂哄け璧勬枡.txt')
+  if (reference === 'outside') fs.writeFileSync(filePath, '鍙湪鏃ч」鐩鐨勫悎鎴愯祫鏂欙紝涓嶅緱璇诲彇鎴栬浆鍏ユ柊椤圭洰銆?)
   const sourceHash = hash(path.join(f.legacy, 'vela.db'))
   const outsideHash = reference === 'outside' ? hash(filePath) : null
   const connection = await lance.connect(path.join(f.legacy, 'lancedb'))
   const tables: lance.Table[] = []
   try {
     tables.push(await connection.createTable('chunks', [{ id: 'old-chunk', docId: 'old-doc',
-      fileName: '创作资料.txt', text: '旧索引片段', chunkIndex: 0, totalChunks: 1,
+      fileName: '鍒涗綔璧勬枡.txt', text: '鏃х储寮曠墖娈?, chunkIndex: 0, totalChunks: 1,
       importedAt: '2026-09-13', corpusKind: 'reference' }], { schema: new Schema([
       new Field('id', new Utf8()), new Field('docId', new Utf8()), new Field('fileName', new Utf8()),
       new Field('text', new Utf8()), new Field('chunkIndex', new Int32()), new Field('totalChunks', new Int32()),
       new Field('importedAt', new Utf8()), new Field('corpusKind', new Utf8()),
     ]) }))
-    tables.push(await connection.createTable('documents', [{ id: 'old-doc', fileName: '创作资料.txt',
+    tables.push(await connection.createTable('documents', [{ id: 'old-doc', fileName: '鍒涗綔璧勬枡.txt',
       filePath, importedAt: '2026-09-13', chunkCount: 1, corpusKind: 'reference' }]))
   } finally { for (const table of tables) table.close(); connection.close() }
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
@@ -640,21 +640,21 @@ it.each(['outside', 'missing'] as const)('旧知识原文引用 %s 时阻断发�
   if (outsideHash) expect(hash(filePath)).toBe(outsideHash)
 })
 
-it('源资料变化、未知旧资产均在发布前拒绝，旧项目保留', async () => {
+it('婧愯祫鏂欏彉鍖栥€佹湭鐭ユ棫璧勪骇鍧囧湪鍙戝竷鍓嶆嫆缁濓紝鏃ч」鐩繚鐣?, async () => {
   const f = fixture('v110')
   const changed = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions,
-    checkpoint: phase => { if (phase === 'copied') fs.appendFileSync(path.join(f.legacy, 'prompts', 'author.txt'), '外部改写') },
+    checkpoint: phase => { if (phase === 'copied') fs.appendFileSync(path.join(f.legacy, 'prompts', 'author.txt'), '澶栭儴鏀瑰啓') },
   })
   expect(changed).toMatchObject({ state: 'blocked', code: 'LEGACY_IMPORT_SOURCE_CHANGED' })
   expect(fs.existsSync(f.target)).toBe(false)
   expect(fs.readdirSync(path.dirname(f.target)).filter(name => name.includes('.new.legacy-import-'))).toEqual([])
-  fs.writeFileSync(path.join(f.legacy, 'unmapped-author-notes.txt'), '不可静默丢弃')
+  fs.writeFileSync(path.join(f.legacy, 'unmapped-author-notes.txt'), '涓嶅彲闈欓粯涓㈠純')
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
     .toMatchObject({ state: 'blocked', code: 'LEGACY_IMPORT_UNMAPPED_ASSET' })
   expect(fs.existsSync(path.join(f.legacy, 'unmapped-author-notes.txt'))).toBe(true)
 })
 
-it('缺失必需旧库或目标发布前中断均不留下半成品', async () => {
+it('缂哄け蹇呴渶鏃у簱鎴栫洰鏍囧彂甯冨墠涓柇鍧囦笉鐣欎笅鍗婃垚鍝?, async () => {
   const missing = fixture('v110')
   fs.unlinkSync(path.join(missing.legacy, 'vela.db'))
   expect(await importLegacyProjectCopy({ sourceRoot: missing.source, targetRoot: missing.target, preflightOptions }))
@@ -675,7 +675,7 @@ it('缺失必需旧库或目标发布前中断均不留下半成品', async () =
 })
 
 it.each(['sqlite-converted', 'assets-converted', 'history-frozen'] as const)(
-  '%s 持久化后中断只清理目标 staging，同路径重试可完成', async phase => {
+  '%s 鎸佷箙鍖栧悗涓柇鍙竻鐞嗙洰鏍?staging锛屽悓璺緞閲嶈瘯鍙畬鎴?, async phase => {
     const f = fixture('v110', '')
     if (phase === 'history-frozen') {
       const db = new Database(path.join(f.legacy, 'vela.db'))
@@ -705,7 +705,7 @@ it.each(['sqlite-converted', 'assets-converted', 'history-frozen'] as const)(
   },
 )
 
-it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保留且目标可安全恢复', async phase => {
+it.each(['sqlite-converted', 'renamed'] as const)('%s 瀛愯繘绋嬬粓姝㈠悗婧愪繚鐣欎笖鐩爣鍙畨鍏ㄦ仮澶?, async phase => {
   const f = fixture('v110', ''), before = sourceState(f)
   await terminateImportAt(f, phase)
   expect(sourceState(f)).toEqual(before)
@@ -719,19 +719,19 @@ it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保�
     expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
       .toMatchObject({ state: 'ready', targetRoot: f.target })
   } else {
-    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(11)
+    expect(verifyProjectSqlite({ databasePath: path.join(f.target, '.ai-novel', 'project.db') }).schemaVersion).toBe(12)
     const access = new ProjectAccessService(preflightOptions)
     const trusted = access.adoptLegacyProject(access.probeExistingProject(f.target))
     expect(trusted.projectId).not.toBe(f.sourceProjectId)
     initProjectDatabase(trusted.rootPath)
-    expect(ProjectCoreRepository.get()?.projectName).toBe('合成旧项目')
+    expect(ProjectCoreRepository.get()?.projectName).toBe('鍚堟垚鏃ч」鐩?)
     closeProjectDatabase()
     expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
       .toMatchObject({ state: 'blocked', code: 'LEGACY_IMPORT_TARGET_EXISTS' })
   }
   const targetDb = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
-    expect(targetDb.prepare('SELECT body FROM contents WHERE id=11').pluck().get()).toBe('合成章节正文\r\n原字节')
+    expect(targetDb.prepare('SELECT body FROM contents WHERE id=11').pluck().get()).toBe('鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?)
   } finally { targetDb.close() }
   expect(hash(path.join(f.target, 'outline.md'))).toBe(hash(path.join(f.source, 'outline.md')))
   for (const file of ['prompts/author.txt', 'skills/author.md'])
@@ -739,18 +739,18 @@ it.each(['sqlite-converted', 'renamed'] as const)('%s 子进程终止后源保�
   expect(sourceState(f)).toEqual(before)
 })
 
-it('旧候选正文保留为可读冻结历史，新项目不重放', async () => {
+it('鏃у€欓€夋鏂囦繚鐣欎负鍙鍐荤粨鍘嗗彶锛屾柊椤圭洰涓嶉噸鏀?, async () => {
   const f = fixture('v110', ''), db = new Database(path.join(f.legacy, 'vela.db'))
-  const candidateSource = JSON.stringify({ chapterNumber: 7, title: '第七章', role: '推进', purpose: '追踪', keyEvents: '线索', characters: [] })
+  const candidateSource = JSON.stringify({ chapterNumber: 7, title: '绗竷绔?, role: '鎺ㄨ繘', purpose: '杩借釜', keyEvents: '绾跨储', characters: [] })
   try {
-    db.prepare('INSERT INTO contents(id,body) VALUES(?,?)').run(12, '旧版人工审稿原文')
+    db.prepare('INSERT INTO contents(id,body) VALUES(?,?)').run(12, '鏃х増浜哄伐瀹＄鍘熸枃')
     db.prepare(`INSERT INTO reviews(id,base_draft_id,review_index,content_id,source_draft_chapter_number,
       source_draft_version,source_draft_status,source_content) VALUES(?,?,?,?,?,?,?,?)`)
-      .run(21, 19, 1, 12, 7, 1, 'draft', '合成章节正文\r\n原字节')
+      .run(21, 19, 1, 12, 7, 1, 'draft', '鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?)
     db.prepare(`INSERT INTO finalization_outbox(finalization_id,draft_id,chapter_number,chapter_title,
       content_hash,content_revision,content_snapshot,target_file_name,publication_status,last_error)
-      VALUES(?,?,?,?,?,1,?,?,'pending',?)`).run('old-outbox', 19, 7, '第七章',
-      createHash('sha256').update('合成章节正文\r\n原字节').digest('hex'), '合成章节正文\r\n原字节', '第七章.md', 'C:\\private\\token-secret')
+      VALUES(?,?,?,?,?,1,?,?,'pending',?)`).run('old-outbox', 19, 7, '绗竷绔?,
+      createHash('sha256').update('鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?).digest('hex'), '鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?, '绗竷绔?md', 'C:\\private\\token-secret')
     db.prepare(`INSERT INTO import_runs(id,root_run_id,effect_namespace,source_fingerprint,manifest_fingerprint,
       locale,stage,status,total_chapters,manifest_chapter_count,execution_owner,execution_epoch,lease_expires_at)
       VALUES(?,?,?,?,?,'zh-CN','parsing','running',0,0,?,?,?)`)
@@ -760,7 +760,7 @@ it('旧候选正文保留为可读冻结历史，新项目不重放', async () =
       source_snapshot,source_hash,visible_text,content_hash) VALUES(?,?,?,?,?,?,?,?,?)`)
       .run('old-candidate', 'old-run', 'old-step', f.sourceProjectId, 7,
         candidateSource, createHash('sha256').update(candidateSource).digest('hex'),
-        '旧候选正文', createHash('sha256').update('旧候选正文').digest('hex'))
+        '鏃у€欓€夋鏂?, createHash('sha256').update('鏃у€欓€夋鏂?).digest('hex'))
     db.prepare(`INSERT INTO llm_calls(id,model_id,model_name,purpose,prompt_tokens,completion_tokens,
       total_tokens,duration_ms,success,error_message,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
       .run(31, 'model?token=secret', 'C:\\private\\model', 'review', 120, 0, 120, 43, 0,
@@ -784,31 +784,31 @@ it('旧候选正文保留为可读冻结历史，新项目不重放', async () =
   const copy = new Database(path.join(f.target, '.ai-novel', 'project.db'), { readonly: true })
   try {
     expect(copy.prepare('SELECT source_hash FROM recovery_candidates WHERE candidate_id=?').pluck().get('old-candidate')).toBe('')
-    expect(copy.prepare('SELECT visible_text FROM recovery_candidates WHERE candidate_id=?').pluck().get('old-candidate')).toBe('旧候选正文')
-    expect(copy.prepare('SELECT body FROM contents WHERE id=(SELECT content_id FROM reviews WHERE id=21)').pluck().get()).toBe('旧版人工审稿原文')
-    expect(copy.prepare('SELECT source_content FROM reviews WHERE id=21').pluck().get()).toBe('合成章节正文\r\n原字节')
+    expect(copy.prepare('SELECT visible_text FROM recovery_candidates WHERE candidate_id=?').pluck().get('old-candidate')).toBe('鏃у€欓€夋鏂?)
+    expect(copy.prepare('SELECT body FROM contents WHERE id=(SELECT content_id FROM reviews WHERE id=21)').pluck().get()).toBe('鏃х増浜哄伐瀹＄鍘熸枃')
+    expect(copy.prepare('SELECT source_content FROM reviews WHERE id=21').pluck().get()).toBe('鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?)
     expect(copy.prepare('SELECT publication_status FROM finalization_outbox WHERE finalization_id=?').pluck().get('old-outbox')).toBe('pending')
     expect(copy.prepare('SELECT last_error FROM finalization_outbox WHERE finalization_id=?').pluck().get('old-outbox')).not.toContain('token-secret')
     expect(copy.prepare('SELECT execution_owner FROM import_runs WHERE id=?').pluck().get('old-import')).not.toBe('old-machine-authority')
     expect(copy.prepare('SELECT model_id,model_name,purpose,prompt_tokens,total_tokens,success,error_message FROM llm_calls WHERE id=31').get())
-      .toMatchObject({ model_id: '', model_name: '旧版模型身份不可用', purpose: 'legacy', prompt_tokens: 120,
-        total_tokens: 120, success: 0, error_message: '旧版错误详情不可用' })
+      .toMatchObject({ model_id: '', model_name: '鏃х増妯″瀷韬唤涓嶅彲鐢?, purpose: 'legacy', prompt_tokens: 120,
+        total_tokens: 120, success: 0, error_message: '鏃х増閿欒璇︽儏涓嶅彲鐢? })
     expect(copy.prepare("SELECT error_msg FROM post_process_steps WHERE run_id='old-post-run'").pluck().get())
-      .toBe('旧版错误详情不可用')
+      .toBe('鏃х増閿欒璇︽儏涓嶅彲鐢?)
     expect(JSON.stringify(copy.prepare('SELECT * FROM llm_calls').all())).not.toContain('token-secret')
   }
   finally { copy.close() }
   initProjectDatabase(f.target)
   expect(LLMHistoryRepository.getStats()).toMatchObject({ totalCalls: 1, failedCalls: 1, totalTokens: 120 })
-  expect(LLMHistoryRepository.getHistory(1)).toMatchObject([{ modelName: '旧版模型身份不可用', success: 0 }])
-  expect(PostProcessRepository.getSteps('old-post-run')).toMatchObject([{ errorMsg: '旧版错误详情不可用', attemptCount: 1 }])
+  expect(LLMHistoryRepository.getHistory(1)).toMatchObject([{ modelName: '鏃х増妯″瀷韬唤涓嶅彲鐢?, success: 0 }])
+  expect(PostProcessRepository.getSteps('old-post-run')).toMatchObject([{ errorMsg: '鏃х増閿欒璇︽儏涓嶅彲鐢?, attemptCount: 1 }])
   closeProjectDatabase()
   await verifyFrozenLegacyConsumersAfterRestart(f.target, path.join(path.dirname(f.source), 'legacy-freeze-child.mjs'))
   expect(Object.fromEntries(Object.keys(before).map(name => [name, hash(path.join(f.legacy, name))]))).toEqual(before)
   expect(fs.existsSync(path.join(f.legacy, 'vela.db'))).toBe(true)
 })
 
-it.each(['v100', 'v110'] as const)('%s 无 manifest 的旧历史启用新 lineage，旧删除操作不能重放', async version => {
+it.each(['v100', 'v110'] as const)('%s 鏃?manifest 鐨勬棫鍘嗗彶鍚敤鏂?lineage锛屾棫鍒犻櫎鎿嶄綔涓嶈兘閲嶆斁', async version => {
   const f = fixture(version, '')
   fs.rmSync(path.join(f.legacy, 'project.json'))
   const oldCandidateProjectId = randomUUID()
@@ -817,15 +817,15 @@ it.each(['v100', 'v110'] as const)('%s 无 manifest 的旧历史启用新 lineag
     source.prepare(`INSERT INTO recovery_candidates(candidate_id,run_id,step_id,project_id,chapter_number,
       source_snapshot,source_hash,visible_text,content_hash) VALUES(?,?,?,?,?,?,?,?,?)`)
       .run('old-candidate', 'old-run', 'old-step', oldCandidateProjectId, 7,
-        JSON.stringify({ chapterNumber: 7, title: '第七章', role: '推进', purpose: '追踪', keyEvents: '线索', characters: [] }),
-        'old-source-hash', '旧候选正文', 'old-content-hash')
+        JSON.stringify({ chapterNumber: 7, title: '绗竷绔?, role: '鎺ㄨ繘', purpose: '杩借釜', keyEvents: '绾跨储', characters: [] }),
+        'old-source-hash', '鏃у€欓€夋鏂?, 'old-content-hash')
     source.prepare(`INSERT INTO chapter_deletion_operations(operation_id,draft_id,chapter_number,finalization_id,
       target_file_name,knowledge_document_id,status) VALUES(?,?,?,?,?,?,'pending')`)
-      .run('old-deletion', 19, 7, 'old-finalization', '第七章.md', 'old-knowledge-doc')
+      .run('old-deletion', 19, 7, 'old-finalization', '绗竷绔?md', 'old-knowledge-doc')
     source.prepare(`INSERT INTO finalization_outbox(finalization_id,draft_id,chapter_number,chapter_title,
       content_hash,content_revision,content_snapshot,target_file_name,publication_status)
-      VALUES(?,?,?,?,?,1,?,?,'pending')`).run('old-outbox', 19, 7, '第七章',
-        createHash('sha256').update('合成章节正文\r\n原字节').digest('hex'), '合成章节正文\r\n原字节', '第七章.md')
+      VALUES(?,?,?,?,?,1,?,?,'pending')`).run('old-outbox', 19, 7, '绗竷绔?,
+        createHash('sha256').update('鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?).digest('hex'), '鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺?, '绗竷绔?md')
     source.prepare(`INSERT INTO import_runs(id,root_run_id,effect_namespace,source_fingerprint,manifest_fingerprint,
       locale,stage,status,total_chapters,manifest_chapter_count) VALUES(?,?,?,?,?,'zh-CN','parsing','running',0,0)`)
       .run('old-import', 'old-import', 'import:old-import', createHash('sha256').update('source').digest('hex'),
@@ -853,7 +853,7 @@ it.each(['v100', 'v110'] as const)('%s 无 manifest 的旧历史启用新 lineag
     .toBe(oldCandidateProjectId)
   expect(targetDb.prepare('SELECT status FROM chapter_deletion_operations WHERE operation_id=?').pluck().get('old-deletion'))
     .toBe('pending')
-  const frozenRefusal = { success: false, committed: false, error: expect.stringContaining('仅保留为历史') }
+  const frozenRefusal = { success: false, committed: false, error: expect.stringContaining('浠呬繚鐣欎负鍘嗗彶') }
   const calls: string[] = []
   const service = new ChapterDeletionService({ cleaner: {
     async removeManuscript() { calls.push('manuscript') },
@@ -868,19 +868,19 @@ it.each(['v100', 'v110'] as const)('%s 无 manifest 的旧历史启用新 lineag
   expect(hash(path.join(f.legacy, 'vela.db'))).toBe(sourceDatabaseHash)
 })
 
-it.each(['v100', 'v110'] as const)('%s 旧版无收据定稿正文保留为 legacy，仅转移有证明的定稿', async version => {
+it.each(['v100', 'v110'] as const)('%s 鏃х増鏃犳敹鎹畾绋挎鏂囦繚鐣欎负 legacy锛屼粎杞Щ鏈夎瘉鏄庣殑瀹氱', async version => {
   const f = fixture(version, '')
   const source = new Database(path.join(f.legacy, 'vela.db'))
   try {
     source.prepare("UPDATE drafts SET status='finalized' WHERE id=19").run()
     source.prepare('INSERT INTO summary_snapshots(id,chapter_number,character_states) VALUES(?,?,?)')
-      .run(31, 7, '{"主角":{"location":"旧设定"}}')
-    source.prepare('INSERT INTO contents(id,body) VALUES(?,?)').run(12, '有来源收据的第八章定稿')
+      .run(31, 7, '{"涓昏":{"location":"鏃ц瀹?}}')
+    source.prepare('INSERT INTO contents(id,body) VALUES(?,?)').run(12, '鏈夋潵婧愭敹鎹殑绗叓绔犲畾绋?)
     source.prepare("INSERT INTO drafts(id,chapter_number,version,content_id,status) VALUES(22,8,1,12,'finalized')").run()
     source.prepare(`INSERT INTO finalization_outbox(finalization_id,draft_id,chapter_number,chapter_title,
       content_hash,content_revision,content_snapshot,target_file_name,publication_status)
-      VALUES(?,?,?,?,?,1,?,?,'published')`).run('bound-finalization', 22, 8, '第八章',
-        createHash('sha256').update('有来源收据的第八章定稿').digest('hex'), '有来源收据的第八章定稿', '第八章.md')
+      VALUES(?,?,?,?,?,1,?,?,'published')`).run('bound-finalization', 22, 8, '绗叓绔?,
+        createHash('sha256').update('鏈夋潵婧愭敹鎹殑绗叓绔犲畾绋?).digest('hex'), '鏈夋潵婧愭敹鎹殑绗叓绔犲畾绋?, '绗叓绔?md')
   } finally { source.close() }
   const sourceHash = hash(path.join(f.legacy, 'vela.db'))
   const result = await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions })
@@ -890,36 +890,36 @@ it.each(['v100', 'v110'] as const)('%s 旧版无收据定稿正文保留为 lega
   const authority = JSON.parse(fs.readFileSync(path.join(storage, 'portable-transfer-authority.json'), 'utf8'))
   expect(authority.finalizations).toEqual([{
     finalizationId: 'bound-finalization', draftId: 22, chapterNumber: 8,
-    contentHash: createHash('sha256').update('有来源收据的第八章定稿').digest('hex'),
+    contentHash: createHash('sha256').update('鏈夋潵婧愭敹鎹殑绗叓绔犲畾绋?).digest('hex'),
   }])
   expect(authority.summarySources).toEqual([])
   initProjectDatabase(f.target)
-  expect(SummaryRepository.readFinalizedSource(19)).toMatchObject({ status: 'legacy', content: '合成章节正文\r\n原字节' })
+  expect(SummaryRepository.readFinalizedSource(19)).toMatchObject({ status: 'legacy', content: '鍚堟垚绔犺妭姝ｆ枃\r\n鍘熷瓧鑺? })
   expect(getProjectDb()!.prepare('SELECT content_snapshot FROM finalization_outbox WHERE finalization_id=?').pluck().get('bound-finalization'))
-    .toBe('有来源收据的第八章定稿')
+    .toBe('鏈夋潵婧愭敹鎹殑绗叓绔犲畾绋?)
   expect(getProjectDb()!.prepare('SELECT character_states FROM summary_snapshots WHERE id=31').pluck().get())
-    .toBe('{"主角":{"location":"旧设定"}}')
+    .toBe('{"涓昏":{"location":"鏃ц瀹?}}')
   expect(() => createPortableTransferAuthority({ database: getProjectDb()!, originProjectId: result.projectId,
     snapshotGeneration: randomUUID(), portableDatabaseSha256: 'a'.repeat(64) })).toThrow('PORTABLE_TRANSFER_AUTHORITY_INVALID')
   expect(hash(path.join(f.legacy, 'vela.db'))).toBe(sourceHash)
 })
 
-it('旧定稿存在失配收据时拒绝发布，不能把坏收据降为 legacy', async () => {
+it('鏃у畾绋垮瓨鍦ㄥけ閰嶆敹鎹椂鎷掔粷鍙戝竷锛屼笉鑳芥妸鍧忔敹鎹檷涓?legacy', async () => {
   const f = fixture('v110')
   const source = new Database(path.join(f.legacy, 'vela.db'))
   try {
     source.prepare("UPDATE drafts SET status='finalized' WHERE id=19").run()
     source.prepare(`INSERT INTO finalization_outbox(finalization_id,draft_id,chapter_number,chapter_title,
       content_hash,content_revision,content_snapshot,target_file_name,publication_status)
-      VALUES(?,?,?,?,?,1,?,?,'published')`).run('bad-finalization', 19, 7, '第七章',
-        'a'.repeat(64), '失配正文', '第七章.md')
+      VALUES(?,?,?,?,?,1,?,?,'published')`).run('bad-finalization', 19, 7, '绗竷绔?,
+        'a'.repeat(64), '澶遍厤姝ｆ枃', '绗竷绔?md')
   } finally { source.close() }
   expect(await importLegacyProjectCopy({ sourceRoot: f.source, targetRoot: f.target, preflightOptions }))
     .toMatchObject({ state: 'blocked', code: 'PORTABLE_TRANSFER_AUTHORITY_INVALID' })
   expect(fs.existsSync(f.target)).toBe(false)
 })
 
-it('未被角色引用的头像原字节保留为待处理资料', async () => {
+it('鏈瑙掕壊寮曠敤鐨勫ご鍍忓師瀛楄妭淇濈暀涓哄緟澶勭悊璧勬枡', async () => {
   const f = fixture('v110', '')
   fs.mkdirSync(path.join(f.legacy, 'avatars'))
   fs.writeFileSync(path.join(f.legacy, 'avatars', 'unmapped.png'), Buffer.from('89504e470d0a1a0a00000000', 'hex'))

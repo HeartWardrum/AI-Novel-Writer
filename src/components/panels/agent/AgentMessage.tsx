@@ -282,7 +282,12 @@ export default function AgentMessage({ message }: Props) {
 
   if (role === 'user') {
     return (
-      <div className="group relative flex justify-end mb-2">
+      <div
+        id={`agent-msg-${id}`}
+        data-message-id={id}
+        data-role="user"
+        className="group relative flex justify-end mb-2"
+      >
         <div
           className="chat-readable-zoom max-w-[88%] px-3 py-2 rounded-2xl text-xs leading-relaxed break-words whitespace-pre-wrap"
           style={{
@@ -300,7 +305,12 @@ export default function AgentMessage({ message }: Props) {
 
   // 助手消息
   return (
-    <div className="group relative flex justify-start mb-2">
+    <div
+      id={`agent-msg-${id}`}
+      data-message-id={id}
+      data-role="assistant"
+      className="group relative flex justify-start mb-2"
+    >
       <div
         className="chat-readable-zoom max-w-full text-xs leading-relaxed break-words w-full"
         style={{ color: 'var(--color-text)' }}

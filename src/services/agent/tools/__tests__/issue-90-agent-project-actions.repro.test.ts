@@ -213,12 +213,21 @@ describe('Issue #90 AI assistant project actions', () => {
     const markSideEffectStarted = vi.fn()
 
     const result = await startWorkflowTool.execute(
-      { workflow: 'generate_draft', chapter_number: 1 },
+      { workflow: 'generate_blueprint' },
       { ...createAgentExecutionContext(), markSideEffectStarted },
     )
 
     expect(result.success).toBe(true)
     expect(markSideEffectStarted).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses retired draft/review/refine workflows from the Agent tool', async () => {
+    const result = await startWorkflowTool.execute(
+      { workflow: 'generate_draft', chapter_number: 1 },
+      createAgentExecutionContext(),
+    )
+    expect(result).toMatchObject({ success: false })
+    expect(result.error).toContain('流水线已停用')
   })
 
   it('does not register a workflow when the Agent is stopped during an asynchronous guard', async () => {
@@ -312,7 +321,6 @@ describe('Issue #90 AI assistant project actions', () => {
   })
 
   it.each([
-    { workflow: 'generate_draft', chapter_number: 1 },
     { workflow: 'generate_architecture' },
     { workflow: 'generate_blueprint' },
   ])('returns a real launch receipt for $workflow', async (args) => {
@@ -349,22 +357,22 @@ describe('Issue #90 AI assistant project actions', () => {
 
     const context = createAgentExecutionContext()
     const result = await startWorkflowTool.execute(
-      { workflow: 'generate_draft', chapter_number: 1 },
+      { workflow: 'generate_blueprint' },
       context,
     )
 
     expect(result.success).toBe(true)
-    expect(result.content).toMatch(/^Started the draft \(Chapter 1\) workflow/)
+    expect(result.content).toMatch(/^Started the blueprint generation workflow/)
     expect(result.content).not.toMatch(/[\u3400-\u9fff]/u)
 
     const failure = await startWorkflowTool.execute(
       { workflow: 'review', chapter_number: 1 },
       context,
     )
-    expect(failure.error).toBe('Could not start the review (Chapter 1) workflow.')
+    expect(failure.error).toContain('流水线已停用')
   })
 
-  it('executes a confirmed raw start_workflow response through the real draft launcher', async () => {
+  it('executes a confirmed raw start_workflow response through the real blueprint launcher', async () => {
     stubWorkflowIpc()
     toolRegistry.register(startWorkflowTool)
     const callbacks = {
@@ -376,13 +384,13 @@ describe('Issue #90 AI assistant project actions', () => {
       onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_draft","chapter_number":1}')
-      .mockResolvedValueOnce('已开始生成第一章。')
+      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_blueprint"}')
+      .mockResolvedValueOnce('已开始生成蓝图。')
 
     await runAgentLoop(
       'system',
       [],
-      '生成第一章',
+      '生成蓝图',
       'model',
       generate,
       callbacks,
@@ -391,16 +399,16 @@ describe('Issue #90 AI assistant project actions', () => {
     )
 
     expect(callbacks.onToolCallConfirmRequired).toHaveBeenCalledOnce()
-    expect(callbacks.onTextChunk).toHaveBeenCalledWith('已开始生成第一章。')
+    expect(callbacks.onTextChunk).toHaveBeenCalledWith('已开始生成蓝图。')
     expect(callbacks.onTextChunk).not.toHaveBeenCalledWith(expect.stringContaining('start_workflow'))
     expect(useWorkflowStore.getState().activeRuns).toContainEqual(expect.objectContaining({
-      type: 'chapter_creation',
+      type: 'directory',
       projectPath,
       status: 'running',
     }))
   })
 
-  it('freezes the Agent-selected model into a confirmed draft workflow instead of falling back to the default model', async () => {
+  it('freezes the Agent-selected model into a confirmed blueprint workflow instead of falling back to the default model', async () => {
     stubWorkflowIpc()
     toolRegistry.register(startWorkflowTool)
     const callbacks = {
@@ -412,30 +420,28 @@ describe('Issue #90 AI assistant project actions', () => {
       onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_draft","chapter_number":1,"model_id":"untrusted-model"}')
-      .mockResolvedValueOnce('已开始生成第一章。')
+      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_blueprint","model_id":"untrusted-model"}')
+      .mockResolvedValueOnce('已开始生成蓝图。')
 
     await runAgentLoop(
       'system',
       [],
-      '生成第一章',
+      '生成蓝图',
       'grok-selected-model',
       generate,
       callbacks,
     )
 
     expect(useWorkflowStore.getState().activeRuns).toContainEqual(expect.objectContaining({
-      type: 'chapter_creation',
+      type: 'directory',
       projectPath,
       generationModelId: 'grok-selected-model',
-      chapterWordsTarget: 3000,
-      resourceKeys: ['chapter:1'],
     }))
   })
 
-  it.each(['review', 'refine', 'finalize'])('fails closed when %s lacks a draft identity', async (workflow) => {
+  it('fails closed when finalize lacks a draft identity', async () => {
     const result = await startWorkflowTool.execute({
-      workflow,
+      workflow: 'finalize',
       chapter_number: 1,
     }, createAgentExecutionContext())
 

@@ -65,6 +65,11 @@ import {
   type PersistedAgentConversation,
   type PersistedAgentMessage,
 } from '../shared/agent-chat'
+import {
+  formatProseToneBlock,
+  normalizeProseToneId,
+  type ProseToneId,
+} from '../shared/prose-tone'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../shared/project-session-context'
 import { resolveWritingLanguage, writingLanguageText } from '../shared/writing-language'
@@ -94,6 +99,7 @@ export interface AgentRequestDebug {
     historyCount: number
     worldbookCount?: number
     chatMode?: AgentChatMode
+    proseTone?: ProseToneId
   }
 }
 
@@ -131,7 +137,7 @@ export interface AgentConversation {
   chatMode: AgentChatMode
   /** 角色模式下选中的世界书人物条目 id */
   characterEntryId: string | null
-  /** 续写/对话焦点章号 */
+  /** 对话焦点章号（世界书/章焦点注入） */
   focusChapterNumber: number
 }
 
@@ -188,9 +194,9 @@ interface AgentState {
   setChatMode: (mode: AgentChatMode) => void
   /** 角色模式下选中的人物条目 */
   setCharacterEntryId: (entryId: string | null) => void
-  /** 设置会话焦点章号（续写本章） */
+  /** 设置会话焦点章号 */
   setFocusChapterNumber: (chapterNumber: number) => void
-  /** 一键续写本章（取输入框半句指导后发送） */
+  /** 一键续写本章（取输入框半句指导后发送；无 UI，保留给测试/兼容） */
   continueCurrentChapter: () => Promise<void>
   /** 删除单条消息（不连带其它消息） */
   deleteMessage: (messageId: string) => void
@@ -1259,6 +1265,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         })
         const focusChapterNumber = normalizeFocusChapterNumber(currentConv.focusChapterNumber)
         const chapterFocus = formatChapterFocusBlock(focusChapterNumber)
+        const proseTone = normalizeProseToneId(project?.novelConfig.proseTone)
+        const proseToneBlock = formatProseToneBlock(proseTone)
         const worldbook = await loadDirectChatWorldbook({
           projectSession,
           userText: userMsg.content,
@@ -1271,6 +1279,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         llmMessages = [
           { role: 'system', content: systemPrompt },
           { role: 'system', content: chapterFocus },
+          ...(proseToneBlock ? [{ role: 'system' as const, content: proseToneBlock }] : []),
           ...(worldbook ? [{ role: 'system' as const, content: worldbook.block }] : []),
           ...historyMessages,
           { role: 'user', content: userMsg.content },
@@ -1284,7 +1293,11 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
       const purpose = 'generation'
       const reasoningStage = 'drafting'
-      const creativeStrategy = useProjectStore.getState().currentProject?.novelConfig.creativeStrategy
+      const novelConfig = useProjectStore.getState().currentProject?.novelConfig
+      const creativeStrategy = novelConfig?.creativeStrategy
+      const authorProseTone = chatMode === 'author'
+        ? normalizeProseToneId(novelConfig?.proseTone)
+        : undefined
       const requestDebug: AgentRequestDebug = {
         at: Date.now(),
         modelId,
@@ -1296,6 +1309,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
           historyCount: historyMessages.length,
           ...(worldbookCount !== undefined ? { worldbookCount } : {}),
           chatMode,
+          ...(authorProseTone && authorProseTone !== 'default' ? { proseTone: authorProseTone } : {}),
         },
       }
       updateAssistantMsg(m => ({

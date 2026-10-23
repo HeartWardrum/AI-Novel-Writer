@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
@@ -21,8 +21,8 @@ function fixture() {
   const db = new Database(source); handles.push(db)
   db.pragma('journal_mode = WAL'); db.pragma('wal_autocheckpoint = 0'); db.pragma('foreign_keys = ON')
   initializeLegacyBaselineSchema(db)
-  db.prepare('INSERT INTO project_core(id, project_name, characters_arch) VALUES (?, ?, ?)').run('main', '合成项目', '# 作者原文\r\n勿改')
-  db.prepare('INSERT INTO contents(body) VALUES (?)').run('窗外下着雨。\r\nLiteral C:\\author\\notes is prose.')
+  db.prepare('INSERT INTO project_core(id, project_name, characters_arch) VALUES (?, ?, ?)').run('main', '鍚堟垚椤圭洰', '# 浣滆€呭師鏂嘰r\n鍕挎敼')
+  db.prepare('INSERT INTO contents(body) VALUES (?)').run('绐楀涓嬬潃闆ㄣ€俓r\nLiteral C:\\author\\notes is prose.')
   db.prepare('INSERT INTO drafts(chapter_number,version,content_id,word_count) VALUES (1,1,1,777)').run()
   return { db, root, source, target }
 }
@@ -39,10 +39,10 @@ function legacyV110Fixture() {
   db.exec(fs.readFileSync(new URL('./legacy-v110-schema.sql', import.meta.url), 'utf8'))
   expect(sqliteSchemaFingerprint(db)).toBe('1207fd8203e31503e3cd09ba5b60a959c606ded34a8c8c7774a9e15edc8271ba')
   db.prepare('INSERT INTO project_core(rowid,id,project_name,characters_arch) VALUES (?,?,?,?)')
-    .run(7, 'main', '旧版合成项目', '原始角色群像')
-  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(44, '乙', 'protagonist')
-  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(99, '甲', 'supporting')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '原始正文\r\n字节不变')
+    .run(7, 'main', '鏃х増鍚堟垚椤圭洰', '鍘熷瑙掕壊缇ゅ儚')
+  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(44, '涔?, 'protagonist')
+  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(99, '鐢?, 'supporting')
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '鍘熷姝ｆ枃\r\n瀛楄妭涓嶅彉')
   db.prepare('INSERT INTO drafts(id,chapter_number,version,content_id,word_count) VALUES (?,?,?,?,?)').run(19, 7, 1, 11, 876)
   db.prepare("UPDATE sqlite_sequence SET seq=900 WHERE name='contents'").run()
   db.prepare("UPDATE sqlite_sequence SET seq=500 WHERE name='drafts'").run()
@@ -59,16 +59,16 @@ function earlyV110Fixture() {
   db.exec(fs.readFileSync(new URL('./legacy-v110-schema0-early.sql', import.meta.url), 'utf8').replaceAll('\r\n', '\n'))
   expect(sqliteSchemaFingerprint(db)).toBe('2504dde08865f758f654d38ae3d972420c28fa60d1f747e92898390455272de6')
   db.prepare('INSERT INTO project_core(rowid,id,project_name,genre,global_guidance,characters_arch) VALUES (?,?,?,?,?,?)')
-    .run(7, 'main', '早期 1.1 项目', '悬疑', '只用作者设定', '# 角色原文')
-  db.prepare('INSERT INTO characters(rowid,name,role,background) VALUES (?,?,?,?)').run(44, '乙', 'protagonist', '旧角色资料')
-  db.prepare('INSERT INTO blueprints(chapter_number,title,notes) VALUES (?,?,?)').run(7, '旧蓝图', '作者蓝图备注')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '正文\r\n原样')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(12, '审稿原文')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(13, '修稿原文')
+    .run(7, 'main', '鏃╂湡 1.1 椤圭洰', '鎮枒', '鍙敤浣滆€呰瀹?, '# 瑙掕壊鍘熸枃')
+  db.prepare('INSERT INTO characters(rowid,name,role,background) VALUES (?,?,?,?)').run(44, '涔?, 'protagonist', '鏃ц鑹茶祫鏂?)
+  db.prepare('INSERT INTO blueprints(chapter_number,title,notes) VALUES (?,?,?)').run(7, '鏃ц摑鍥?, '浣滆€呰摑鍥惧娉?)
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '姝ｆ枃\r\n鍘熸牱')
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(12, '瀹＄鍘熸枃')
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(13, '淇鍘熸枃')
   db.prepare('INSERT INTO drafts(id,chapter_number,version,content_id) VALUES (?,?,?,?)').run(19, 7, 1, 11)
   db.prepare('INSERT INTO reviews(id,base_draft_id,review_index,content_id) VALUES (?,?,?,?)').run(21, 19, 1, 12)
   db.prepare('INSERT INTO revisions(id,base_draft_id,revision_index,revision_type,content_id) VALUES (?,?,?,?,?)').run(23, 19, 1, 'refine', 13)
-  db.prepare('INSERT INTO summary_snapshots(id,chapter_number,character_states) VALUES (?,?,?)').run(25, 7, '{"乙":"旧状态"}')
+  db.prepare('INSERT INTO summary_snapshots(id,chapter_number,character_states) VALUES (?,?,?)').run(25, 7, '{"涔?:"鏃х姸鎬?}')
   db.prepare('INSERT INTO llm_calls(id,model_id,purpose) VALUES (?,?,?)').run(27, 'old-model', 'draft')
   db.prepare('INSERT INTO post_process_runs(id,trigger_source_type,trigger_source_id) VALUES (?,?,?)').run('old-run', 'draft', '19')
   db.prepare('INSERT INTO post_process_steps(id,run_id,step_key,ok) VALUES (?,?,?,?)').run(29, 'old-run', 'review', 1)
@@ -88,21 +88,21 @@ function legacyV100Fixture(official = false) {
     ? 'c536a35e30f51f681843a2a07a48592cc80e9840abeb7898fcd463297128ccf8'
     : '5e1ee5e03fa79bbf49694a680316ee74047f45901cd3f8affeaa0a7fda3ea414')
   db.prepare('INSERT INTO project_core(rowid,id,project_name,characters_arch) VALUES (?,?,?,?)')
-    .run(7, 'main', 'v1.0 合成项目', '旧版角色原文')
-  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(44, '乙', 'protagonist')
-  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(99, '甲', 'supporting')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, 'v1.0 正文\r\n原字节')
+    .run(7, 'main', 'v1.0 鍚堟垚椤圭洰', '鏃х増瑙掕壊鍘熸枃')
+  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(44, '涔?, 'protagonist')
+  db.prepare('INSERT INTO characters(rowid,name,role) VALUES (?,?,?)').run(99, '鐢?, 'supporting')
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, 'v1.0 姝ｆ枃\r\n鍘熷瓧鑺?)
   db.prepare('INSERT INTO drafts(id,chapter_number,version,content_id,word_count) VALUES (?,?,?,?,?)').run(19, 7, 1, 11, 876)
   if (official) {
     db.prepare('UPDATE project_core SET core_outline=NULL, world_setting=NULL, protagonist_profile=NULL WHERE id=?').run('main')
-    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(12, '官方审稿原文')
-    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(13, '官方修稿原文')
+    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(12, '瀹樻柟瀹＄鍘熸枃')
+    db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(13, '瀹樻柟淇鍘熸枃')
     db.prepare('INSERT INTO reviews(id,base_draft_id,review_index,source_draft_chapter_number,source_draft_version,source_draft_status,source_content,content_id) VALUES (?,?,?,?,?,?,?,?)')
-      .run(21, 19, 1, 7, 1, 'draft', '冻结审稿源文', 12)
+      .run(21, 19, 1, 7, 1, 'draft', '鍐荤粨瀹＄婧愭枃', 12)
     db.prepare('INSERT INTO revisions(id,base_draft_id,revision_index,revision_type,source_draft_chapter_number,source_draft_version,source_draft_status,source_content,content_id) VALUES (?,?,?,?,?,?,?,?,?)')
-      .run(22, 19, 1, 'refine', 7, 1, 'draft', '冻结修稿源文', 13)
+      .run(22, 19, 1, 'refine', 7, 1, 'draft', '鍐荤粨淇婧愭枃', 13)
   }
-  db.prepare('INSERT INTO summary_snapshots(id,draft_id,chapter_number,character_states) VALUES (?,?,?,?)').run(23, 19, 7, '{"乙":"作者旧状态"}')
+  db.prepare('INSERT INTO summary_snapshots(id,draft_id,chapter_number,character_states) VALUES (?,?,?,?)').run(23, 19, 7, '{"涔?:"浣滆€呮棫鐘舵€?}')
   db.prepare("UPDATE sqlite_sequence SET seq=900 WHERE name='contents'").run()
   db.prepare("UPDATE sqlite_sequence SET seq=500 WHERE name='drafts'").run()
   return { db, root, source, target }
@@ -116,8 +116,8 @@ function legacyV092Fixture() {
   db.pragma('journal_mode = WAL'); db.pragma('wal_autocheckpoint = 0'); db.pragma('foreign_keys = ON')
   db.exec(fs.readFileSync(new URL('./legacy-v092-lazy-schema.sql', import.meta.url), 'utf8').replaceAll('\r\n', '\n'))
   db.prepare('INSERT INTO project_core(rowid,id,project_name,characters_arch) VALUES (?,?,?,?)')
-    .run(7, 'main', '0.9.2 合成项目', '旧角色原文')
-  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '旧正文\r\n保留')
+    .run(7, 'main', '0.9.2 鍚堟垚椤圭洰', '鏃ц鑹插師鏂?)
+  db.prepare('INSERT INTO contents(id,body) VALUES (?,?)').run(11, '鏃ф鏂嘰r\n淇濈暀')
   db.prepare('INSERT INTO drafts(id,chapter_number,version,content_id) VALUES (?,?,?,?)').run(19, 7, 1, 11)
   db.prepare('INSERT INTO reviews(id,base_draft_id,review_index,content_id) VALUES (?,?,?,?)').run(21, 19, 1, 11)
   db.prepare('INSERT INTO revisions(id,base_draft_id,revision_index,revision_type,content_id) VALUES (?,?,?,?,?)').run(22, 19, 1, 'refine', 11)
@@ -169,7 +169,7 @@ describe('real SQLite schema probe and WAL staging backup', () => {
     await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
     const target = new Database(f.target, { fileMustExist: true }); handles.push(target)
     target.exec('DELETE FROM character_roster_meta')
-    expect(() => CharacterRosterRepository.read(target)).toThrow('角色名单元数据未初始化')
+    expect(() => CharacterRosterRepository.read(target)).toThrow('瑙掕壊鍚嶅崟鍏冩暟鎹湭鍒濆鍖?)
     expect(target.prepare('SELECT COUNT(*) FROM character_roster_meta').pluck().get()).toBe(0)
   })
 
@@ -179,15 +179,15 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: '2504dde08865f758f654d38ae3d972420c28fa60d1f747e92898390455272de6',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,project_name,genre,global_guidance,characters_arch FROM project_core').get())
-      .toEqual({ rowid: 7, project_name: '早期 1.1 项目', genre: '悬疑', global_guidance: '只用作者设定', characters_arch: '# 角色原文' })
-    expect(target.prepare('SELECT name,background FROM characters').get()).toEqual({ name: '乙', background: '旧角色资料' })
-    expect(target.prepare('SELECT title,notes FROM blueprints').get()).toEqual({ title: '旧蓝图', notes: '作者蓝图备注' })
+      .toEqual({ rowid: 7, project_name: '鏃╂湡 1.1 椤圭洰', genre: '鎮枒', global_guidance: '鍙敤浣滆€呰瀹?, characters_arch: '# 瑙掕壊鍘熸枃' })
+    expect(target.prepare('SELECT name,background FROM characters').get()).toEqual({ name: '涔?, background: '鏃ц鑹茶祫鏂? })
+    expect(target.prepare('SELECT title,notes FROM blueprints').get()).toEqual({ title: '鏃ц摑鍥?, notes: '浣滆€呰摑鍥惧娉? })
     expect(target.prepare('SELECT id,body FROM contents ORDER BY id').all()).toEqual([
-      { id: 11, body: '正文\r\n原样' }, { id: 12, body: '审稿原文' }, { id: 13, body: '修稿原文' },
+      { id: 11, body: '姝ｆ枃\r\n鍘熸牱' }, { id: 12, body: '瀹＄鍘熸枃' }, { id: 13, body: '淇鍘熸枃' },
     ])
     for (const [table, id] of [['drafts', 19], ['reviews', 21], ['revisions', 23], ['summary_snapshots', 25], ['llm_calls', 27], ['post_process_steps', 29]] as const) {
       expect(target.prepare(`SELECT id FROM ${table}`).pluck().get(), table).toBe(id)
@@ -217,23 +217,23 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.0.0 old columns, rowids, and sequence into schema7 staging', async () => {
     const f = legacyV100Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
-    expect(target.prepare('SELECT id,body FROM contents').get()).toEqual({ id: 11, body: 'v1.0 正文\r\n原字节' })
+    expect(target.prepare('SELECT id,body FROM contents').get()).toEqual({ id: 11, body: 'v1.0 姝ｆ枃\r\n鍘熷瓧鑺? })
     expect(target.prepare('SELECT id,generation,stale_from_chapter FROM continuity_projection_meta').all()).toEqual([{ id: 'main', generation: 0, stale_from_chapter: null }])
     expect(target.prepare('SELECT id,content_id,word_count,source_dependencies FROM drafts').get()).toEqual({
       id: 19, content_id: 11, word_count: 876, source_dependencies: '[]',
     })
     expect(target.prepare('SELECT id,character_states,character_state_candidates FROM summary_snapshots').get()).toEqual({
-      id: 23, character_states: '{"乙":"作者旧状态"}', character_state_candidates: '[]',
+      id: 23, character_states: '{"涔?:"浣滆€呮棫鐘舵€?}', character_state_candidates: '[]',
     })
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='contents'").pluck().get()).toBe(900)
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='drafts'").pluck().get()).toBe(500)
     const identities = target.prepare('SELECT source_key,original_row_json,character_id FROM character_identity_origins ORDER BY source_key').all() as Array<{ source_key: string; original_row_json: string; character_id: string }>
     expect(identities.map(row => [row.source_key, JSON.parse(row.original_row_json).name])).toEqual([
-      ['legacy:characters:0', '乙'], ['legacy:characters:1', '甲'],
+      ['legacy:characters:0', '涔?], ['legacy:characters:1', '鐢?],
     ])
     expect(new Set(identities.map(row => row.character_id)).size).toBe(2)
     expect(bytes(f.root)).toMatchObject(before)
@@ -254,22 +254,22 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       schemaVersion: 0, fingerprint: 'c536a35e30f51f681843a2a07a48592cc80e9840abeb7898fcd463297128ccf8',
     })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid,core_outline,world_setting,protagonist_profile FROM project_core').get())
       .toEqual({ rowid: 7, core_outline: null, world_setting: null, protagonist_profile: null })
     expect(target.prepare('SELECT id,generation,stale_from_chapter FROM continuity_projection_meta').all()).toEqual([{ id: 'main', generation: 0, stale_from_chapter: null }])
     expect(ProjectCoreRepository.get(target)).toMatchObject({ coreOutline: null, worldSetting: null, protagonistProfile: null })
-    ProjectCoreRepository.update({ projectName: '导入后编辑' }, target)
+    ProjectCoreRepository.update({ projectName: '瀵煎叆鍚庣紪杈? }, target)
     expect(target.prepare('SELECT project_name,core_outline,world_setting,protagonist_profile FROM project_core').get())
-      .toEqual({ project_name: '导入后编辑', core_outline: null, world_setting: null, protagonist_profile: null })
+      .toEqual({ project_name: '瀵煎叆鍚庣紪杈?, core_outline: null, world_setting: null, protagonist_profile: null })
     expect(target.prepare('SELECT rowid AS source_rowid,source_draft_chapter_number,source_draft_version,source_draft_status,source_content,content_id FROM reviews').get())
-      .toEqual({ source_rowid: 21, source_draft_chapter_number: 7, source_draft_version: 1, source_draft_status: 'draft', source_content: '冻结审稿源文', content_id: 12 })
+      .toEqual({ source_rowid: 21, source_draft_chapter_number: 7, source_draft_version: 1, source_draft_status: 'draft', source_content: '鍐荤粨瀹＄婧愭枃', content_id: 12 })
     expect(target.prepare('SELECT rowid AS source_rowid,source_draft_chapter_number,source_draft_version,source_draft_status,source_content,content_id FROM revisions').get())
-      .toEqual({ source_rowid: 22, source_draft_chapter_number: 7, source_draft_version: 1, source_draft_status: 'draft', source_content: '冻结修稿源文', content_id: 13 })
+      .toEqual({ source_rowid: 22, source_draft_chapter_number: 7, source_draft_version: 1, source_draft_status: 'draft', source_content: '鍐荤粨淇婧愭枃', content_id: 13 })
     expect(target.prepare('SELECT rowid AS source_rowid,draft_id,chapter_number,character_states FROM summary_snapshots').get())
-      .toEqual({ source_rowid: 23, draft_id: 19, chapter_number: 7, character_states: '{"乙":"作者旧状态"}' })
+      .toEqual({ source_rowid: 23, draft_id: 19, chapter_number: 7, character_states: '{"涔?:"浣滆€呮棫鐘舵€?}' })
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='contents'").pluck().get()).toBe(900)
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='drafts'").pluck().get()).toBe(500)
     expect(bytes(f.root)).toMatchObject(before)
@@ -292,15 +292,15 @@ describe('real SQLite schema probe and WAL staging backup', () => {
       : '29838d67b3b0338b717c7488a7a2841c40fdacbb58598a83358bd73b6bda4673'
     expect(sqliteSchemaFingerprint(f.db)).toBe(fingerprint)
     f.db.prepare('INSERT INTO blueprint_commit_operations(rowid,operation_id,payload_hash,mode,start_chapter,end_chapter,character_sync_input) VALUES (?,?,?,?,?,?,?)')
-      .run(41, 'old-commit', 'old-hash', 'full', 7, 7, '{"characters":["旧角色"]}')
+      .run(41, 'old-commit', 'old-hash', 'full', 7, 7, '{"characters":["鏃ц鑹?]}')
     f.db.prepare('INSERT INTO blueprint_character_sync_operations(rowid,operation_id,blueprint_commit_operation_id,blueprint_commit_payload_hash,start_chapter,end_chapter,character_sync_input) VALUES (?,?,?,?,?,?,?)')
-      .run(53, 'old-sync', 'old-commit', 'old-hash', 7, 7, '{"characters":["旧角色"]}')
+      .run(53, 'old-sync', 'old-commit', 'old-hash', 7, 7, '{"characters":["鏃ц鑹?]}')
     const preservedTables = ['blueprint_commit_operations', 'blueprint_character_sync_operations', 'contents', 'reviews', 'revisions']
     const originals = preservedTables.map(table => f.db.prepare(`SELECT rowid,* FROM ${table} ORDER BY rowid`).all())
     const before = bytes(f.root)
     expect(probeProjectSqlite({ databasePath: f.source })).toMatchObject({ schemaVersion: 0, fingerprint })
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     for (const [index, table] of preservedTables.entries()) {
@@ -343,18 +343,18 @@ describe('real SQLite schema probe and WAL staging backup', () => {
   it('copies qualified v1.1.0 rows and sequence through canonical staging to schema7 without writing the source', async () => {
     const f = legacyV110Fixture(), before = bytes(f.root)
     const result = await backupProjectSqlite({ sourceDatabasePath: f.source, targetDatabasePath: f.target })
-    expect(result.schemaVersion).toBe(11)
+    expect(result.schemaVersion).toBe(12)
     expect(verifyProjectSqlite({ databasePath: f.target })).toEqual(result)
     const target = new Database(f.target, { readonly: true, fileMustExist: true }); handles.push(target)
     expect(target.prepare('SELECT rowid FROM project_core WHERE id=?').pluck().get('main')).toBe(7)
-    expect(target.prepare('SELECT id,body FROM contents').get()).toEqual({ id: 11, body: '原始正文\r\n字节不变' })
+    expect(target.prepare('SELECT id,body FROM contents').get()).toEqual({ id: 11, body: '鍘熷姝ｆ枃\r\n瀛楄妭涓嶅彉' })
     expect(target.prepare('SELECT id,generation,stale_from_chapter FROM continuity_projection_meta').all()).toEqual([{ id: 'main', generation: 0, stale_from_chapter: null }])
     expect(target.prepare('SELECT id,content_id,word_count FROM drafts').get()).toEqual({ id: 19, content_id: 11, word_count: 876 })
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='contents'").pluck().get()).toBe(900)
     expect(target.prepare("SELECT seq FROM sqlite_sequence WHERE name='drafts'").pluck().get()).toBe(500)
     const identities = target.prepare('SELECT source_key,original_row_json,character_id FROM character_identity_origins ORDER BY source_key').all() as Array<{ source_key: string; original_row_json: string; character_id: string }>
     expect(identities.map(row => [row.source_key, JSON.parse(row.original_row_json).name])).toEqual([
-      ['legacy:characters:0', '乙'], ['legacy:characters:1', '甲'],
+      ['legacy:characters:0', '涔?], ['legacy:characters:1', '鐢?],
     ])
     expect(new Set(identities.map(row => row.character_id)).size).toBe(2)
     expect(bytes(f.root)).toMatchObject(before)
@@ -415,7 +415,7 @@ it('upgrades a qualified schema 6 file to schema 7 without changing author conte
  const before=await backupProjectSqlite({sourceDatabasePath:f.source,targetDatabasePath:f.target,targetVersion:6})
  expect(before.schemaVersion).toBe(6)
  const upgraded=upgradeProjectSqlite({databasePath:f.target})
- expect(upgraded.schemaVersion).toBe(11)
+ expect(upgraded.schemaVersion).toBe(12)
  expect(upgraded.domain).toEqual(before.domain)
  expect(verifyProjectSqlite({databasePath:f.target})).toEqual(upgraded)
 })

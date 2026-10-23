@@ -1,3 +1,5 @@
+import type { ProseToneId } from './prose-tone'
+
 /** 本轮实际注入的轻量回执（仅标题/章号，不含全文）。 */
 export interface AgentContextReceiptChapter {
   chapterNumber: number
@@ -86,8 +88,10 @@ export interface PersistedAgentConversation {
   chatMode?: AgentChatMode
   /** 角色模式下选中的世界书人物条目 id */
   characterEntryId?: string | null
-  /** 会话焦点章号（续写本章用）；缺省 1 */
+  /** 会话焦点章号（世界书/章焦点注入用）；缺省 1 */
   focusChapterNumber?: number
+  /** @deprecated 文风滤镜已迁到作品 novelConfig.proseTone；旧信封可读，写入忽略 */
+  proseTone?: ProseToneId
 }
 
 export interface AgentChatLoadResult {

@@ -6,7 +6,7 @@ import fieldPolicyDocument from './portable-project-field-policy.json'
 
 export const PORTABLE_PROJECT_FORMAT_VERSION = 1 as const
 export const PORTABLE_SOURCE_SCHEMA_VERSION = 11 as const
-export const PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS = Object.freeze([8, 9, 10, 11] as const)
+export const PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS = Object.freeze([8, 9, 10, 11, 12] as const)
 
 export type PortableFieldDisposition = 'preserve-domain' | 'historical-nonreplayable'
   | 'redacted-projection' | 'exclude-machine-authority' | 'rebuild-stale'
@@ -248,7 +248,7 @@ export function parsePortableProjectManifest(value: unknown, configuredLimits?: 
     'declaredUncompressedBytes', 'declaredCompressedBytes', 'entries', 'semanticCounts', 'omittedItems',
     'transferReceiptIds', 'historyProjectionIds'])
   if (source.formatVersion !== PORTABLE_PROJECT_FORMAT_VERSION
-    || !PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS.includes(source.sourceSchemaVersion as 8 | 9 | 10 | 11)) {
+    || !PORTABLE_SUPPORTED_SOURCE_SCHEMA_VERSIONS.includes(source.sourceSchemaVersion as 8 | 9 | 10 | 11 | 12)) {
     formatError('PORTABLE_SCHEMA_UNSUPPORTED')
   }
   const originProjectId = identifier(source.originProjectId)
@@ -311,7 +311,7 @@ export function parsePortableProjectManifest(value: unknown, configuredLimits?: 
   if (new Set(omittedItems.map(item => item.id)).size !== omittedItems.length) formatError('PORTABLE_MANIFEST_INVALID')
   return {
     formatVersion: PORTABLE_PROJECT_FORMAT_VERSION,
-    sourceSchemaVersion: source.sourceSchemaVersion as 8 | 9 | 10 | 11,
+    sourceSchemaVersion: source.sourceSchemaVersion as 8 | 9 | 10 | 11 | 12,
     originProjectId,
     snapshotGeneration,
     createdAt: source.createdAt,

@@ -50,6 +50,48 @@
   text-transform: uppercase;
 }
 
+.worldbook-prose-tone {
+  margin: var(--s-3) 0 0;
+  padding: var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  display: grid;
+  gap: var(--s-2);
+}
+.worldbook-prose-tone-title {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--ink);
+}
+.worldbook-prose-tone-hint {
+  margin: 2px 0 0;
+  font-size: var(--fs-11);
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.worldbook-prose-tone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.worldbook-prose-tone-chip {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.worldbook-prose-tone-chip[data-active] {
+  background: var(--accent, var(--ink));
+  border-color: transparent;
+  color: var(--accent-contrast, #fff);
+}
+
 .worldbook-list-actions { margin: var(--s-4) 0 var(--s-3); justify-content: flex-start; flex-wrap: wrap; }
 .worldbook-search {
   display: flex;
