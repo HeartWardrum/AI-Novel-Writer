@@ -237,6 +237,14 @@ interface CharacterState {
     expectedProjectSession?: ProjectSessionContext,
   ) => Promise<boolean>
   renameCharacter: (name: string, newName: string) => boolean
+  /**
+   * 按 selectionKey 全量重排名单；可选覆盖部分角色的身份（跨组拖放）。
+   * 只写草稿账本，不立刻 IPC。
+   */
+  reorderCharacters: (
+    orderedSelectionKeys: readonly string[],
+    roleByKey?: Readonly<Record<string, CharacterCard['role']>>,
+  ) => boolean
   discardDraft: (projectPath: string, expectedProjectSession?: ProjectSessionContext) => void
   updateField: <K extends Exclude<keyof CharacterCard, 'name' | 'characterId'>>(
     name: string,
@@ -678,6 +686,54 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
     let nextLedger = recordProjectEditorEdit(ledger, projectKey, before, characters)
     nextLedger = setCharacterDraftRenames(nextLedger, projectKey, nextRenames)
     persistCharacterDraftLedger(nextLedger)
+    return true
+  },
+
+  reorderCharacters: (orderedSelectionKeys, roleByKey = {}) => {
+    const projectSession = currentCharacterProjectSession()
+    if (!projectSession) return false
+    if (
+      characterIdentityMutationInFlight
+      && sameProjectSessionContext(characterIdentityMutationInFlight.projectSession, projectSession)
+    ) return false
+    const projectKey = projectSession.projectPath
+    const state = get()
+    if (
+      !sameProjectSessionContext(state.dataProjectSession, projectSession)
+      || state.loadingProjectSession !== null
+      || state.lastError !== null
+    ) return false
+
+    const before = get().characters
+    if (orderedSelectionKeys.length !== before.length) return false
+    if (new Set(orderedSelectionKeys).size !== orderedSelectionKeys.length) return false
+
+    const keyed = before.map((character, index) => ({
+      key: characterSelectionKey(character, index),
+      character,
+    }))
+    const byKey = new Map(keyed.map(entry => [entry.key, entry.character]))
+    if (orderedSelectionKeys.some(key => !byKey.has(key))) return false
+
+    const characters = orderedSelectionKeys.map(key => {
+      const card = byKey.get(key)!
+      const nextRole = roleByKey[key]
+      return nextRole && nextRole !== card.role ? { ...card, role: nextRole } : card
+    })
+
+    const selectedId = get().selectedId
+    const selectedName = selectedId
+      ? characters.find((character, index) => characterSelectionKey(character, index) === selectedId)?.name
+        ?? get().selectedName
+      : get().selectedName
+
+    set({ characters, selectedName })
+    persistCharacterDraftLedger(recordProjectEditorEdit(
+      readCharacterDraftLedger(projectKey),
+      projectKey,
+      before,
+      characters,
+    ))
     return true
   },
 

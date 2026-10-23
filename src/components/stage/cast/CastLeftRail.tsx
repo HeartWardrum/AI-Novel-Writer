@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Plus, Save, Search } from 'lucide-react'
-import { getCharacterRoleLabels } from '../../../shared/character-role'
+import { CHARACTER_ROLES, getCharacterRoleLabels, type CharacterRole } from '../../../shared/character-role'
 import {
   defaultWorldbookActivation,
   type WorldbookActivation,
@@ -14,11 +14,18 @@ import { useCharacterProfile } from '../../editor/use-character-profile'
 import {
   characterSelectionKey,
   useCharacterStore,
+  type CharacterCard,
 } from '../../../stores/character-store'
+import { useAgentStore } from '../../../stores/agent-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useProjectStore } from '../../../stores/project-store'
 import { Button } from '../../ui/Button'
 import { toast } from '../../ui/Toast'
+import {
+  groupCharactersByRole,
+  isCharacterMentionedInText,
+  recentChatHaystack,
+} from './cast-rail-model'
 import './cast-left-rail.css'
 
 const RAIL_WIDTH_KEY = 'ai-novel.cast-left-rail-width'
@@ -304,6 +311,259 @@ function CastExpandPanel({
   )
 }
 
+type EditTarget = { key: string; field: 'name' | 'role' } | null
+type DropHint = { key: string; place: 'before' | 'after' } | null
+type DropShift = 'up' | 'down' | null
+
+function flatKeysFromGroups(
+  groups: ReturnType<typeof groupCharactersByRole>,
+): string[] {
+  return groups.flatMap(group => group.items.map(item => item.key))
+}
+
+function insertKeyBefore(
+  keys: readonly string[],
+  fromKey: string,
+  toKey: string,
+  place: 'before' | 'after',
+): string[] {
+  const without = keys.filter(key => key !== fromKey)
+  let index = without.indexOf(toKey)
+  if (index < 0) return [...keys]
+  if (place === 'after') index += 1
+  without.splice(index, 0, fromKey)
+  return without
+}
+
+/** 按落点缝隙给邻行微移：缝上略上、缝下略下。 */
+function resolveDropShift(
+  flatKeys: readonly string[],
+  itemKey: string,
+  draggingKey: string | null,
+  dropHint: DropHint,
+): DropShift {
+  if (!draggingKey || !dropHint || itemKey === draggingKey) return null
+  const itemIndex = flatKeys.indexOf(itemKey)
+  const hintIndex = flatKeys.indexOf(dropHint.key)
+  if (itemIndex < 0 || hintIndex < 0) return null
+  const gapIndex = dropHint.place === 'before' ? hintIndex : hintIndex + 1
+  return itemIndex >= gapIndex ? 'down' : 'up'
+}
+
+function CastRailRow({
+  projectKey,
+  character,
+  selectionKey,
+  groupRole,
+  avatarUrl,
+  expanded,
+  mentioned,
+  dragEnabled,
+  dragging,
+  dropPlace,
+  dropShift,
+  editing,
+  onToggle,
+  onStartEdit,
+  onStopEdit,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+}: {
+  projectKey: string
+  character: CharacterCard
+  selectionKey: string
+  groupRole: CharacterRole
+  avatarUrl?: string
+  expanded: boolean
+  mentioned: boolean
+  dragEnabled: boolean
+  dragging: boolean
+  dropPlace: 'before' | 'after' | null
+  dropShift: DropShift
+  editing: EditTarget
+  onToggle: () => void
+  onStartEdit: (field: 'name' | 'role') => void
+  onStopEdit: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDragOver: (place: 'before' | 'after') => void
+  onDrop: (place: 'before' | 'after') => void
+}) {
+  const text = useLocaleStore(s => s.text)
+  const identityBusy = useCharacterStore(s => s.identityBusy)
+  const [nameDraft, setNameDraft] = useState(character.name)
+  const didDragRef = useRef(false)
+  const editingName = editing?.key === selectionKey && editing.field === 'name'
+  const editingRole = editing?.key === selectionKey && editing.field === 'role'
+  const rowDraggable = dragEnabled && !editingName && !editingRole
+
+  useEffect(() => {
+    if (editingName) setNameDraft(character.name)
+  }, [character.name, editingName])
+
+  const roleLabel = (role: unknown) => {
+    const { zhCN, enUS } = getCharacterRoleLabels(role)
+    return text(zhCN, enUS)
+  }
+
+  const commitName = () => {
+    const next = nameDraft.trim()
+    if (next && next !== character.name) {
+      useCharacterStore.getState().renameCharacter(selectionKey, next)
+    }
+    onStopEdit()
+  }
+
+  return (
+    <li
+      className="cast-left-rail-item"
+      data-expanded={expanded ? 'true' : 'false'}
+      data-mentioned={mentioned ? 'true' : 'false'}
+      data-role-group={groupRole}
+      data-dragging={dragging ? 'true' : 'false'}
+      data-drop-place={dropPlace ?? undefined}
+      data-drop-shift={dropShift ?? undefined}
+      onDragOver={event => {
+        if (!dragEnabled || dragging) return
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        onDragOver(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      }}
+      onDrop={event => {
+        if (!dragEnabled || dragging) return
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        onDrop(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      }}
+    >
+      <div
+        className="cast-left-rail-row"
+        data-testid={`cast-left-rail-row-${selectionKey}`}
+        data-character-id={character.characterId}
+        data-mentioned={mentioned ? 'true' : 'false'}
+        data-drag-source={rowDraggable ? 'true' : 'false'}
+      >
+        <button
+          type="button"
+          className="cast-left-rail-row-main"
+          data-testid={`cast-left-rail-drag-${selectionKey}`}
+          aria-expanded={expanded}
+          aria-label={rowDraggable ? text('拖拽排序或展开', '拖拽排序或展开') : undefined}
+          draggable={rowDraggable}
+          onDragStart={event => {
+            if (!rowDraggable) return
+            const target = event.target as HTMLElement | null
+            if (target?.closest('input, select, textarea')) {
+              event.preventDefault()
+              return
+            }
+            didDragRef.current = true
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData('text/plain', selectionKey)
+            onDragStart()
+          }}
+          onDragEnd={onDragEnd}
+          onClick={event => {
+            // 双击改名/身份时忽略第二次 click；拖拽松手后的 click 也吞掉
+            if (event.detail > 1) return
+            if (didDragRef.current) {
+              didDragRef.current = false
+              return
+            }
+            onToggle()
+          }}
+        >
+          {avatarUrl
+            ? <img className="cast-left-rail-avatar" src={avatarUrl} alt="" draggable={false} />
+            : (
+              <span className="cast-left-rail-avatar cast-left-rail-avatar--fallback" aria-hidden>
+                {Array.from(character.name || '?')[0]}
+              </span>
+            )}
+          <span className="cast-left-rail-row-text">
+            {editingName ? (
+              <input
+                className="cast-left-rail-inline-input"
+                value={nameDraft}
+                autoFocus
+                disabled={identityBusy}
+                draggable={false}
+                aria-label={text('姓名', '姓名')}
+                onClick={event => event.stopPropagation()}
+                onDragStart={event => event.preventDefault()}
+                onChange={event => setNameDraft(event.target.value)}
+                onBlur={commitName}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    commitName()
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    setNameDraft(character.name)
+                    onStopEdit()
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="cast-left-rail-row-name"
+                onDoubleClick={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onStartEdit('name')
+                }}
+              >
+                {character.name || text('未命名', '未命名')}
+              </span>
+            )}
+            {editingRole ? (
+              <select
+                className="cast-left-rail-inline-select"
+                value={character.role}
+                autoFocus
+                draggable={false}
+                aria-label={text('身份', '身份')}
+                onClick={event => event.stopPropagation()}
+                onDragStart={event => event.preventDefault()}
+                onChange={event => {
+                  useCharacterStore.getState().updateField(
+                    selectionKey,
+                    'role',
+                    event.target.value as CharacterCard['role'],
+                  )
+                  onStopEdit()
+                }}
+                onBlur={onStopEdit}
+              >
+                {CHARACTER_ROLES.map(role => (
+                  <option key={role} value={role}>{roleLabel(role)}</option>
+                ))}
+              </select>
+            ) : (
+              <span
+                className="cast-left-rail-row-role"
+                onDoubleClick={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onStartEdit('role')
+                }}
+              >
+                {roleLabel(character.role)}
+              </span>
+            )}
+          </span>
+        </button>
+      </div>
+      {expanded && (
+        <CastExpandPanel projectKey={projectKey} selectionKey={selectionKey} />
+      )}
+    </li>
+  )
+}
+
 /** 聊天壳左侧人物栏：名单行可向下展开编辑档案 + 世界书人设。 */
 export default function CastLeftRail({ projectKey }: { projectKey: string }) {
   const text = useLocaleStore(s => s.text)
@@ -312,11 +572,18 @@ export default function CastLeftRail({ projectKey }: { projectKey: string }) {
   const loadingProjectKey = useCharacterStore(s => s.loadingProjectKey)
   const lastError = useCharacterStore(s => s.lastError)
   const identityBusy = useCharacterStore(s => s.identityBusy)
+  const activeMessages = useAgentStore(s => {
+    const activeId = s.activeConversationId
+    return s.conversations.find(conversation => conversation.id === activeId)?.messages
+  })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [railWidth, setRailWidth] = useState(RAIL_WIDTH_DEFAULT)
   const [resizing, setResizing] = useState(false)
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [editing, setEditing] = useState<EditTarget>(null)
+  const [draggingKey, setDraggingKey] = useState<string | null>(null)
+  const [dropHint, setDropHint] = useState<DropHint>(null)
+  const widthDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   useEffect(() => {
     setRailWidth(readStoredRailWidth())
@@ -326,17 +593,17 @@ export default function CastLeftRail({ projectKey }: { projectKey: string }) {
     event.preventDefault()
     event.stopPropagation()
     const handle = event.currentTarget
-    dragRef.current = { startX: event.clientX, startWidth: railWidth }
+    widthDragRef.current = { startX: event.clientX, startWidth: railWidth }
     setResizing(true)
     handle.setPointerCapture(event.pointerId)
 
     const onMove = (moveEvent: PointerEvent) => {
-      const drag = dragRef.current
+      const drag = widthDragRef.current
       if (!drag) return
       setRailWidth(clampRailWidth(drag.startWidth + (moveEvent.clientX - drag.startX)))
     }
     const onUp = (upEvent: PointerEvent) => {
-      dragRef.current = null
+      widthDragRef.current = null
       setResizing(false)
       handle.releasePointerCapture(upEvent.pointerId)
       handle.removeEventListener('pointermove', onMove)
@@ -362,17 +629,52 @@ export default function CastLeftRail({ projectKey }: { projectKey: string }) {
   }
 
   const normalized = searchQuery.trim().toLocaleLowerCase()
-  const rows = (dataReady ? characters : []).filter(character => (
-    !normalized || character.name.toLocaleLowerCase().includes(normalized)
-  ))
+  const filtering = Boolean(normalized)
+  const groups = useMemo(() => {
+    const all = groupCharactersByRole(dataReady ? characters : [])
+    if (!normalized) return all
+    return all
+      .map(group => ({
+        ...group,
+        items: group.items.filter(item => (
+          item.character.name.toLocaleLowerCase().includes(normalized)
+        )),
+      }))
+      .filter(group => group.items.length > 0)
+  }, [characters, dataReady, normalized])
+
+  const visibleCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+  const flatVisibleKeys = useMemo(() => flatKeysFromGroups(groups), [groups])
+
+  const haystack = useMemo(
+    () => recentChatHaystack(activeMessages ?? []),
+    [activeMessages],
+  )
+
+  const clearDrag = () => {
+    setDraggingKey(null)
+    setDropHint(null)
+  }
 
   const toggle = (key: string) => {
+    if (editing) return
     if (expandedId === key) {
       setExpandedId(null)
       return
     }
     useCharacterStore.getState().setSelectedId(key)
     setExpandedId(key)
+  }
+
+  const applyDrop = (fromKey: string, toKey: string, place: 'before' | 'after', targetRole: CharacterRole) => {
+    if (fromKey === toKey) return
+    const fullGroups = groupCharactersByRole(characters)
+    const ordered = insertKeyBefore(flatKeysFromGroups(fullGroups), fromKey, toKey, place)
+    const fromCard = characters.find((character, index) => characterSelectionKey(character, index) === fromKey)
+    const roleByKey = fromCard && fromCard.role !== targetRole
+      ? { [fromKey]: targetRole }
+      : undefined
+    useCharacterStore.getState().reorderCharacters(ordered, roleByKey)
   }
 
   return (
@@ -410,42 +712,59 @@ export default function CastLeftRail({ projectKey }: { projectKey: string }) {
         </label>
       </div>
 
-      <ul className="cast-left-rail-list">
-        {rows.map((character, index) => {
-          const key = characterSelectionKey(character, characters.indexOf(character) >= 0
-            ? characters.indexOf(character)
-            : index)
-          const avatar = character.characterId ? avatarUrls[character.characterId] : undefined
-          const expanded = expandedId === key
-          return (
-            <li key={key} className="cast-left-rail-item" data-expanded={expanded ? 'true' : 'false'}>
-              <button
-                type="button"
-                className="cast-left-rail-row"
-                data-testid={`cast-left-rail-row-${key}`}
-                data-character-id={character.characterId}
-                aria-expanded={expanded}
-                onClick={() => toggle(key)}
-              >
-                {avatar
-                  ? <img className="cast-left-rail-avatar" src={avatar} alt="" />
-                  : (
-                    <span className="cast-left-rail-avatar cast-left-rail-avatar--fallback" aria-hidden>
-                      {Array.from(character.name || '?')[0]}
-                    </span>
-                  )}
-                <span className="cast-left-rail-row-text">
-                  <span className="cast-left-rail-row-name">{character.name || text('未命名', '未命名')}</span>
-                  <span className="cast-left-rail-row-role">{roleLabel(character.role)}</span>
-                </span>
-              </button>
-              {expanded && (
-                <CastExpandPanel projectKey={projectKey} selectionKey={key} />
-              )}
+      <ul
+        className="cast-left-rail-list"
+        data-drag-active={draggingKey ? 'true' : 'false'}
+      >
+        {groups.map(group => (
+          <Fragment key={group.role}>
+            <li className="cast-left-rail-group-label" role="presentation">
+              <span>{roleLabel(group.role)}</span>
             </li>
-          )
-        })}
-        {dataReady && rows.length === 0 && (
+            {group.items.map(item => (
+              <CastRailRow
+                key={item.key}
+                projectKey={projectKey}
+                character={item.character}
+                selectionKey={item.key}
+                groupRole={group.role}
+                avatarUrl={item.character.characterId ? avatarUrls[item.character.characterId] : undefined}
+                expanded={expandedId === item.key}
+                mentioned={isCharacterMentionedInText(item.character.name, haystack)}
+                dragEnabled={!filtering && dataReady}
+                dragging={draggingKey === item.key}
+                dropPlace={
+                  dropHint?.key === item.key && draggingKey && draggingKey !== item.key
+                    ? dropHint.place
+                    : null
+                }
+                dropShift={resolveDropShift(flatVisibleKeys, item.key, draggingKey, dropHint)}
+                editing={editing}
+                onToggle={() => toggle(item.key)}
+                onStartEdit={field => setEditing({ key: item.key, field })}
+                onStopEdit={() => setEditing(null)}
+                onDragStart={() => {
+                  setDraggingKey(item.key)
+                  setDropHint(null)
+                }}
+                onDragEnd={clearDrag}
+                onDragOver={place => {
+                  setDropHint(current => (
+                    current?.key === item.key && current.place === place
+                      ? current
+                      : { key: item.key, place }
+                  ))
+                }}
+                onDrop={place => {
+                  if (!draggingKey) return
+                  applyDrop(draggingKey, item.key, place, group.role)
+                  clearDrag()
+                }}
+              />
+            ))}
+          </Fragment>
+        ))}
+        {dataReady && visibleCount === 0 && (
           <li className="cast-left-rail-empty">
             {lastError
               ? text(`角色列表读取失败：${lastError}`, `角色列表读取失败：${lastError}`)
