@@ -6,6 +6,7 @@ import { ErrorBoundary } from '../ErrorBoundary'
 import AIPanel from '../panels/AIPanel'
 import ChatMessageRail from '../panels/agent/ChatMessageRail'
 import { Button } from '../ui/Button'
+import CastLeftRail from './cast/CastLeftRail'
 import { SettingsPage } from './stage-pages'
 import StageWorldbook from './worldbook/StageWorldbook'
 import './chat-workbench.css'
@@ -29,6 +30,11 @@ export default function ChatWorkbench({
     <div className="chat-shell-frame" data-shell-presentation="chat">
       <div className="chat-workbench">
         <div className="chat-workbench-body" role="tabpanel">
+          {projectKey && (
+            <ErrorBoundary fallbackLabel={text('人物栏渲染失败', '人物栏渲染失败')}>
+              <CastLeftRail projectKey={projectKey} />
+            </ErrorBoundary>
+          )}
           <ErrorBoundary fallbackLabel={text('对话面板渲染失败', 'Chat panel failed to render')}>
             <div className="workbench-chat chat-workbench-chat">
               <div className="workbench-chat-panel chat-workbench-chat-panel">
@@ -36,7 +42,7 @@ export default function ChatWorkbench({
               </div>
             </div>
           </ErrorBoundary>
-          {/* 迷你轴在居中对话列外侧的右边栏，不叠在气泡上 */}
+          {/* 迷你轴在对话列外侧右边栏，不叠在气泡上 */}
           <ChatMessageRail />
         </div>
 

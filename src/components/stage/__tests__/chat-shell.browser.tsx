@@ -98,6 +98,7 @@ describe('聊天优先外壳', () => {
     expect(host!.querySelector('.materials-rail')).toBeNull()
     expect(host!.querySelector('.chat-workbench')).not.toBeNull()
     expect(host!.querySelector('.chat-topbar')).not.toBeNull()
+    expect(host!.querySelector('[data-testid="cast-left-rail"]')).not.toBeNull()
   })
 
   it('顶栏可回书房、开世界书与设置', async () => {
@@ -123,14 +124,20 @@ describe('聊天优先外壳', () => {
     await vi.waitFor(() => expect(host!.querySelector('[data-library]')).not.toBeNull())
   })
 
-  it('空态对话列居中；有消息后输入沉到底部', async () => {
+  it('空态对话列整壳居中；左栏定宽；有消息后输入沉到底部', async () => {
     await vi.waitFor(() => expect(chatInput()).toBeTruthy())
     const frame = shellFrame().getBoundingClientRect()
+    const railEl = host!.querySelector<HTMLElement>('[data-testid="cast-left-rail"]')!
+    const rail = railEl.getBoundingClientRect()
     const column = chatColumn().getBoundingClientRect()
     const emptyInput = chatInput().getBoundingClientRect()
 
     expect(column.width).toBeLessThan(frame.width - 24)
+    // 对话列相对整壳水平居中（左栏绝对定位不占 flex）
     expect(Math.abs((column.left + column.right) / 2 - (frame.left + frame.right) / 2)).toBeLessThan(8)
+    expect(rail.width).toBeGreaterThanOrEqual(220)
+    expect(rail.width).toBeLessThanOrEqual(520)
+    expect(host!.querySelector('[data-testid="cast-left-rail-resizer"]')).not.toBeNull()
     // 空态：输入大致在壳的中段，而不是贴底
     expect(emptyInput.top).toBeGreaterThan(frame.top + frame.height * 0.2)
     expect(emptyInput.bottom).toBeLessThan(frame.bottom - frame.height * 0.15)

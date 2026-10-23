@@ -76,6 +76,9 @@ const KIND_NAMES: Record<WorldbookEntryKind, [string, string]> = {
   custom: ['自定义', 'Custom'],
 }
 
+/** 人物已迁到聊天左栏，世界书 UI 不再列出/新建/导入人物类型。 */
+const WORLDBOOK_UI_KINDS = WORLD_BOOK_ENTRY_KINDS.filter(kind => kind !== 'character')
+
 function textValue(value: string): string {
   return value.trim()
 }
@@ -217,11 +220,15 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
         setSelectedId('__new__')
         return
       }
-      const targetId = preferredEntryId
-        ?? (currentId && next.some(entry => entry.id === currentId) ? currentId : null)
-        ?? next[0]?.id
+      const visible = next.filter(entry => entry.kind !== 'character')
+      const preferred = preferredEntryId
+        ? visible.find(entry => entry.id === preferredEntryId)
+        : undefined
+      const targetId = preferred?.id
+        ?? (currentId && visible.some(entry => entry.id === currentId) ? currentId : null)
+        ?? visible[0]?.id
         ?? null
-      applyEntry(targetId ? next.find(entry => entry.id === targetId) ?? null : null)
+      applyEntry(targetId ? visible.find(entry => entry.id === targetId) ?? null : null)
     } catch (cause) {
       if (isProjectSessionCurrent(session)) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -236,6 +243,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return entries.filter(entry => {
+      if (entry.kind === 'character') return false
       if (kindFilter !== 'all' && entry.kind !== kindFilter) return false
       if (onlyEnabled && !entry.activation.enabled) return false
       if (sourceFilter !== 'all' && entry.source.kind !== sourceFilter) return false
@@ -253,6 +261,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
   }
 
   const startNew = (kind: WorldbookEntryKind = 'custom') => {
+    if (kind === 'character') return
     if (dirty && !window.confirm(text('当前条目有未保存的修改，继续会丢失。', 'Discard the unsaved changes to this entry?'))) return
     const activation = defaultWorldbookActivation(kind)
     const newEntry: WorldbookEntry = {
@@ -369,10 +378,12 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
     try {
       const candidates = await listWorldbookSources(session)
       if (!isProjectSessionCurrent(session)) return
-      setImportCandidates(candidates.map(item => ({
-        ...item,
-        selected: !item.alreadyImported,
-      })))
+      setImportCandidates(candidates
+        .filter(item => item.kind !== 'character')
+        .map(item => ({
+          ...item,
+          selected: !item.alreadyImported,
+        })))
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -434,7 +445,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
         },
         {
           role: 'user',
-          content: `Split the following source into 1-30 atomic entries. Allowed kind values: ${WORLD_BOOK_ENTRY_KINDS.join(', ')}. Return one object: {"entries":[{"title":"...","kind":"world","content":"...","primaryKeys":["..."],"secondaryKeys":["..."]}]}. primaryKeys should be concrete names, aliases, places, objects, terms, or events likely to appear in a chapter.\n\nSOURCE\n${selected.content}`,
+          content: `Split the following source into 1-30 atomic entries. Allowed kind values: ${WORLDBOOK_UI_KINDS.join(', ')}. Return one object: {"entries":[{"title":"...","kind":"world","content":"...","primaryKeys":["..."],"secondaryKeys":["..."]}]}. primaryKeys should be concrete names, aliases, places, objects, terms, or events likely to appear in a chapter.\n\nSOURCE\n${selected.content}`,
         },
       ], model.id, {
         responseFormat: { type: 'json_object' },
@@ -544,7 +555,7 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
             <Filter size={12} aria-hidden />
             <select value={kindFilter} onChange={event => setKindFilter(event.target.value as typeof kindFilter)} aria-label={text('条目类型', 'Entry type')}>
               <option value="all">{text('全部类型', 'All types')}</option>
-              {WORLD_BOOK_ENTRY_KINDS.map(kind => <option key={kind} value={kind}>{text(...KIND_NAMES[kind])}</option>)}
+              {WORLDBOOK_UI_KINDS.map(kind => <option key={kind} value={kind}>{text(...KIND_NAMES[kind])}</option>)}
             </select>
           </label>
           <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value as typeof sourceFilter)} aria-label={text('条目来源', 'Entry source')}>
@@ -622,14 +633,15 @@ export default function StageWorldbook({ projectKey }: { projectKey: string }) {
                       aria-label={text('条目类型', '条目类型')}
                       onChange={event => {
                         const next = event.target.value as WorldbookEntryKind
+                        if (next === 'character') return
                         setDraftKind(next)
-                        if (next !== 'character') setDraftPrivateContent('')
+                        setDraftPrivateContent('')
                         if (selected.id === '__new__' && newDraftRef.current) {
-                          newDraftRef.current = { ...newDraftRef.current, kind: next, privateContent: next === 'character' ? draftPrivateContent : '' }
+                          newDraftRef.current = { ...newDraftRef.current, kind: next, privateContent: '' }
                         }
                       }}
                     >
-                      {WORLD_BOOK_ENTRY_KINDS.map(kind => (
+                      {WORLDBOOK_UI_KINDS.map(kind => (
                         <option key={kind} value={kind}>{text(...KIND_NAMES[kind])}</option>
                       ))}
                     </select>
